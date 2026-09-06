@@ -134,11 +134,34 @@ class TestResourceMatching:
             ("Date din modificare contract T1 2025", "modificari"),
             ("Anunturi de atribuire la proceduri fara anunt de initiere TI 2026", "fara_anunt"),
             ("Anunțuri de inițiere publicate T1 2025", "initiere"),
+            # Regression: the initiation notice changed name repeatedly. Requiring
+            # "anunturi de initiere" silently lost 2017, 2018, 2020 and 2021.
+            ("Anunturi participare 2017 - T1", "initiere"),
+            ("Anunțuri inițiere 2020 - T3", "initiere"),
+            ("Anunturi initiere 2021 - T2", "initiere"),
+            ("Anunturi de initiere publicate in SEAP TII 2023", "initiere"),
         ],
     )
     def test_classification(self, name: str, expected: str) -> None:
         matched = [t.key for t in TABLES if t.match.search(name)]
         assert matched and matched[0] == expected, f"{name!r} -> {matched}"
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            # Invitations to an existing dynamic purchasing system are a different
+            # record; "participare" alone must not pull them into `initiere`.
+            "Invitatii participare 2017 - T1",
+            "Invitatii de depunere oferta la sistemul de achizitii dinamic T1 2024",
+            "Invitații de depunere SAD cu anunț aferent T1 2025",
+            # Framework call-offs, deliberately excluded from `contracte`.
+            "Contracte subsecvente 2017 - T1",
+            # The award side of direct purchases — not yet modelled as a table.
+            "Notificari de atribuire la cumpararea directa T I 2024",
+        ],
+    )
+    def test_unrelated_resources_stay_unclassified(self, name: str) -> None:
+        assert [t.key for t in TABLES if t.match.search(name)] == []
 
     def test_modificari_not_classified_as_contracte(self) -> None:
         """'Date din modificare contract' contains 'contract' — order must not matter."""
