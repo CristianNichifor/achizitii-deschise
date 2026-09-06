@@ -26,27 +26,47 @@ from typing import Any
 # ---------------------------------------------------------------- legal thresholds
 #
 # Ceiling below which a contracting authority may buy directly, without a competitive
-# procedure (Legea 98/2016, art. 7). The ceiling has been raised over time, so it is a
-# dated schedule rather than a constant.
+# procedure (Legea 98/2016, art. 7 alin. 5). The ceiling has been raised repeatedly, so
+# it is a dated schedule rather than a constant.
 #
-# The 2023-01-01 values are confirmed empirically: in the Q1 2026 export, direct
-# acquisitions for goods/services stop dead at 270,120 RON — 8 records above it in the
-# whole 270,120-280,000 range, against 377 in the 1,120 RON immediately below.
+# Getting this from the legal text alone turned out to be unreliable. The freely
+# available consolidations disagree: the originally published form gives 132,519 /
+# 441,730 lei, secondary sources quote 270,120 for goods/services and variously 900,000
+# or 900,400 for works, and dated consolidations sit behind paywalls. A wrong ceiling
+# does not merely weaken the indicator — it invents findings.
 #
-# EARLIER VALUES ARE NOT YET VERIFIED against the legal text. Until they are, the rule
-# simply does not run on those years; a wrong threshold would invent findings.
+# So the operative ceiling is instead DETECTED FROM THE DATA (`detect_ceiling`), and the
+# legal values below serve only as corroboration. The distribution of direct-acquisition
+# values collapses at the ceiling, because exceeding it is unlawful; that cliff is the
+# ceiling actually in force, whichever amending act set it.
+#
+# `source` records where a value came from. `verified` means it has been confirmed
+# against observed data, not merely quoted somewhere.
 THRESHOLDS: list[dict[str, Any]] = [
     {
         "from": date(2023, 1, 1),
         "to": None,
         "goods_services": 270_120.0,
-        "works": 900_000.0,
+        # Works is deliberately absent: sources disagree (900,000 vs 900,400) and no
+        # empirical confirmation has been made. None means "unknown", never "no limit".
+        "works": None,
         "verified": True,
+        "source": (
+            "confirmed empirically: H1 2026 goods/services direct acquisitions stop at "
+            "270,120 RON — 8 records above it across 270,120-280,000, against 377 in "
+            "the 1,120 RON below, and 478 priced at exactly 270,000"
+        ),
     },
 ]
 
 
 def threshold_for(day: date, category: str) -> float | None:
+    """Declared ceiling for a date, or None when it is not established.
+
+    None is a refusal, not a permission: callers must skip rather than substitute a
+    default.
+    """
+    key = "works" if category == "works" else "goods_services"
     for row in THRESHOLDS:
         if not row["verified"]:
             continue
@@ -54,8 +74,66 @@ def threshold_for(day: date, category: str) -> float | None:
             continue
         if row["to"] and day > row["to"]:
             continue
-        return row["goods_services"] if category != "works" else row["works"]
+        return row.get(key)
     return None
+
+
+# Detection parameters. A cliff only counts when there is enough mass below it to be
+# meaningful and the drop is unambiguous.
+CEILING_MIN_BELOW = 100
+"""Minimum acquisitions in the window below a candidate ceiling."""
+
+CEILING_MIN_RATIO = 8.0
+"""Below:above density ratio required to call a cliff a legal ceiling."""
+
+CEILING_WINDOW = 20_000.0
+"""Lei either side of a candidate used to measure the drop."""
+
+
+def detect_ceiling_sql(window: float = CEILING_WINDOW) -> str:
+    """SQL that finds the sharpest density cliff per year.
+
+    Direct acquisitions cannot lawfully exceed the ceiling, so their value distribution
+    ends abruptly at it. Scanning candidate cutoffs and scoring each by the ratio of
+    mass just below to mass just above recovers the ceiling in force that year without
+    relying on a legal consolidation.
+    """
+    return f"""
+    WITH d AS (
+      SELECT an, TRY_CAST(valoare_ron AS DOUBLE) v
+      FROM achizitii_directe
+      WHERE lower(coalesce(tip_contract,'')) IN ('furnizare','servicii')
+        AND TRY_CAST(valoare_ron AS DOUBLE) BETWEEN 20000 AND 2000000
+    ),
+    candidates AS (
+      SELECT DISTINCT an, (floor(v / 1000) * 1000) AS c FROM d
+    ),
+    scored AS (
+      SELECT c.an, c.c AS cutoff,
+             count(*) FILTER (WHERE d.v > c.c - {window} AND d.v <= c.c) AS n_below,
+             count(*) FILTER (WHERE d.v > c.c AND d.v <= c.c + {window}) AS n_above,
+             max(d.v) FILTER (WHERE d.v <= c.c) AS max_below
+      FROM candidates c JOIN d ON d.an = c.an
+      GROUP BY c.an, c.c
+    ),
+    ranked AS (
+      SELECT an, cutoff, n_below, n_above, max_below,
+             n_below::DOUBLE / greatest(n_above, 1) AS ratio,
+             row_number() OVER (
+               PARTITION BY an
+               -- Smallest cutoff among equally sharp cliffs: every candidate above the
+               -- true ceiling scores the same, so the tightest bound is the honest one.
+               ORDER BY n_below::DOUBLE / greatest(n_above, 1) DESC, cutoff ASC
+             ) AS rn
+      FROM scored WHERE n_below >= {CEILING_MIN_BELOW}
+    )
+    SELECT an,
+           cutoff AS cliff_at,
+           max_below AS max_valoare_observata,
+           n_below, n_above, round(ratio, 1) AS ratio
+    FROM ranked WHERE rn = 1 AND ratio >= {CEILING_MIN_RATIO}
+    ORDER BY an
+    """
 
 
 # ------------------------------------------------------------------------ rule type
