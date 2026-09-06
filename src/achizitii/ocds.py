@@ -13,7 +13,7 @@ import re
 from typing import Any
 
 from . import config
-from .normalize import fix_diacritics
+from .normalize import fix_diacritics, normalize_unit
 
 # Organisation strings arrive in several shapes:
 #   "9626572 - FUNDATIA DE SPRIJIN COMUNITAR"
@@ -108,6 +108,13 @@ def _item(raw: dict[str, Any]) -> dict[str, Any]:
     unit: dict[str, Any] = {}
     if raw.get("itemMeasureUnit"):
         unit["name"] = fix_diacritics(raw["itemMeasureUnit"])
+        # Normalise the buyer's free text onto a UN/CEFACT Recommendation 20 code, the
+        # scheme OCDS specifies for `unit.id`. Unrecognised units carry no code rather
+        # than a guessed one.
+        code = normalize_unit(raw["itemMeasureUnit"]).uncefact
+        if code:
+            unit["scheme"] = "UNCEFACT"
+            unit["id"] = code
     if unit_price is not None:
         unit["value"] = {"amount": unit_price, "currency": config.CURRENCY}
     if unit:

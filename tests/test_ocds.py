@@ -96,6 +96,23 @@ class TestRelease:
         assert item["unit"]["value"]["currency"] == "RON"
         assert item["classification"]["id"] == "30213100"
 
+    def test_unit_carries_uncefact_code(self) -> None:
+        """Free-text 'bucata' becomes a standards-based UNCEFACT code."""
+        r = direct_acquisition_to_release(DETAIL)
+        unit = r["tender"]["items"][0]["unit"]
+        assert unit["name"] == "bucata"      # buyer's original text preserved
+        assert unit["scheme"] == "UNCEFACT"
+        assert unit["id"] == "H87"           # piece
+
+    def test_unrecognised_unit_emits_no_code(self) -> None:
+        detail = {**DETAIL, "directAcquisitionItems": [
+            {**DETAIL["directAcquisitionItems"][0], "itemMeasureUnit": "Role"}
+        ]}
+        unit = direct_acquisition_to_release(detail)["tender"]["items"][0]["unit"]
+        assert unit["name"] == "Role"
+        assert "id" not in unit
+        assert "scheme" not in unit
+
     def test_award_present_and_active(self) -> None:
         r = direct_acquisition_to_release(DETAIL)
         award = r["awards"][0]

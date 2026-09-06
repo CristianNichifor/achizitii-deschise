@@ -38,6 +38,46 @@ class TestUnitNormalisation:
         assert normalize_unit("").comparable is False
 
 
+class TestUncefactCodes:
+    """Units carry UN/CEFACT Rec 20 codes so OCDS `unit.id` is standards-based."""
+
+    @pytest.mark.parametrize(
+        ("raw", "code"),
+        [
+            ("bucata", "H87"),   # piece
+            ("bucăți", "H87"),
+            ("kg", "KGM"),
+            ("ora", "HUR"),
+            ("mp", "MTK"),       # square metre
+            ("mc", "MTQ"),       # cubic metre
+            ("set", "SET"),
+            ("cutie", "BX"),
+        ],
+    )
+    def test_code_assigned(self, raw: str, code: str) -> None:
+        assert normalize_unit(raw).uncefact == code
+
+    def test_unknown_unit_has_no_code(self) -> None:
+        """Never emit a guessed code — an absent unit.id is honest, a wrong one is not."""
+        assert normalize_unit("Role").uncefact is None
+
+    def test_every_declared_code_is_a_real_uncefact_code(self) -> None:
+        """Guard against typos in um_map.yml.
+
+        Codes are validated against the UN/CEFACT Recommendation 20 common codes. The
+        subset asserted here is the full set the map currently uses; adding a unit means
+        adding its code here too.
+        """
+        from achizitii.normalize import _unit_index
+
+        known = {
+            "H87", "KGM", "GRM", "TNE", "LTR", "MLT", "MTQ", "MTR", "KMT",
+            "MTK", "HUR", "DAY", "MON", "ANN", "KWH", "SET", "PK", "BX", "LS", "E48",
+        }
+        used = {u.uncefact for u in _unit_index().values() if u.uncefact}
+        assert used <= known, f"unknown UN/CEFACT codes in um_map.yml: {used - known}"
+
+
 class TestFold:
     def test_diacritics_and_cedilla_fold_together(self) -> None:
         # ş (cedilla, legacy Windows) and ș (comma-below, correct) must match.
@@ -120,6 +160,36 @@ class TestNormalizeItem:
         )
         assert item.pack_size == 30
         assert item.comparable is True
+
+    def test_bundle_named_in_description_despite_count_unit(self) -> None:
+        """Real record: a food package booked as qty 1 'bucata'.
+
+        The declared unit says piece; the item is a package of unknown contents. Its
+        102.96 RON is not comparable with another buyer's differently-filled package.
+        """
+        item = normalize_item(
+            description="PACHET ALIMENTAR",
+            long_description="CONTINE DIFERITE PRODUSE ALIMENTARE, MEZELURI, LACTATE",
+            cpv="15897300",
+            quantity=1.0,
+            unit_raw="bucata",
+            unit_price_ron=102.96,
+        )
+        assert item.comparable is False
+        assert item.incomparable_reason == "descriere_de_tip_pachet_fara_marime_cunoscuta"
+
+    def test_ordinary_goods_not_misflagged_as_bundles(self) -> None:
+        """The bundle heuristic must not swallow normal items."""
+        for desc in ["Laptop Business Lenovo V15", "Cutie de viteze", "Monitor Dell 24"]:
+            item = normalize_item(
+                description=desc,
+                long_description=None,
+                cpv=None,
+                quantity=2.0,
+                unit_raw="bucata",
+                unit_price_ron=100.0,
+            )
+            assert item.comparable is True, f"{desc!r} wrongly flagged as a bundle"
 
     def test_unknown_unit_is_excluded(self) -> None:
         item = normalize_item(

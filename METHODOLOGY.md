@@ -43,6 +43,20 @@ A line item is marked `comparabil = false`, with `motiv_necomparabil`, when:
 | `cantitate_lipsa_sau_nepozitiva` | No quantity, or ≤ 0 |
 | `unitate_nerecunoscuta` | `itemMeasureUnit` not in `data/um_map.yml`. **Never guessed.** |
 | `unitate_de_tip_pachet_fara_marime_cunoscuta` | Bundle unit (`set`, `pachet`, `cutie`, `lot`, `serviciu`) with no recoverable pack size |
+| `descriere_de_tip_pachet_fara_marime_cunoscuta` | Declared unit is a count, but the description names a bundle |
+
+The last rule exists because buyers routinely book a bundle under a count unit. A real
+record reads `PACHET ALIMENTAR`, quantity 1, unit `bucata`, 102.96 RON — the unit field
+claims a piece, while the description says it is a package of assorted food. Trusting the
+unit field alone under-reports bundles, so the description is checked as well.
+
+## Units are UN/CEFACT codes
+
+Each canonical unit carries its **UN/CEFACT Recommendation 20** common code (`buc` →
+`H87` "piece", `mp` → `MTK` "square metre"), emitted as `unit.scheme: "UNCEFACT"` and
+`unit.id` in OCDS. Unrecognised units carry **no** code — an absent `unit.id` is honest,
+a guessed one is not. Codes were validated against the codelist published by ProZorro
+(`ProzorroUKR/standards`, Apache-2.0); see `docs/prior-art.md`.
 
 The bundle rule is the most consequential. "1 set" describes an unknown quantity of
 goods. Comparing one buyer's set against another's is meaningless, and because bundles
