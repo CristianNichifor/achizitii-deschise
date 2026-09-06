@@ -1,4 +1,4 @@
-name: daily ingest
+name: daily ingest (SEAP line items)
 
 on:
   schedule:
@@ -12,14 +12,17 @@ on:
       end:
         description: "End date (YYYY-MM-DD)"
         required: false
+      limit:
+        description: "Cap records per day (smoke test only)"
+        required: false
 
 # Never two writers on state/ or the data branch.
 concurrency:
-  group: ingest
+  group: ingest-seap
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   ingest:
@@ -40,18 +43,25 @@ jobs:
 
       - name: Ingest
         run: |
+          set -euo pipefail
+          ARGS=()
           if [ -n "${{ inputs.start }}" ]; then
-            achizitii --start "${{ inputs.start }}" ${{ inputs.end && format('--end {0}', inputs.end) || '' }}
+            ARGS+=(--start "${{ inputs.start }}")
+            [ -n "${{ inputs.end }}" ] && ARGS+=(--end "${{ inputs.end }}")
           else
-            achizitii --days-back 1
+            ARGS+=(--days-back 1)
           fi
+          [ -n "${{ inputs.limit }}" ] && ARGS+=(--limit "${{ inputs.limit }}")
+          achizitii seap "${ARGS[@]}"
 
       - name: Summarise
         run: |
           python - <<'PY'
-          import duckdb, pathlib
+          import pathlib
+          import duckdb
           if not list(pathlib.Path("site/data/items").rglob("*.parquet")):
-              print("no data produced"); raise SystemExit(0)
+              print("no data produced")
+              raise SystemExit(0)
           duckdb.sql("""
             SELECT count(*) items,
                    sum(comparabil::INT) comparabile,
@@ -64,12 +74,12 @@ jobs:
       - name: Upload artefacts
         uses: actions/upload-artifact@v4
         with:
-          name: data-${{ github.run_id }}
+          name: seap-${{ github.run_id }}
           path: |
             site/data/items
             data/core
           retention-days: 30
+          if-no-files-found: warn
 
-  # Publishing to Pages is intentionally a separate, manual-first step: data quality
-  # is not yet validated at scale, and nothing should go public by accident.
-  # Enable once Stage 1 lands.
+  # Publishing to Pages is intentionally NOT wired up: data quality is not yet
+  # validated at scale, and nothing should go public by accident. Enable at Stage 1.
