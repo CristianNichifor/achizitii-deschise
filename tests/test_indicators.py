@@ -115,3 +115,92 @@ class TestCorroboration:
 
     def test_reports_exceedance_share(self) -> None:
         assert "pct_peste" in corroborate_ceiling_sql()
+
+
+class TestFailureSignalling:
+    """A pipeline that produces nothing must not report success.
+
+    Per-year and per-resource errors are swallowed so one bad file cannot abort a
+    decade-long backfill. That tolerance turned a total failure into a green CI build
+    once already: data.gov.ro refused every connection, the job exited 0, and all five
+    indicators silently reported "missing data".
+    """
+
+    def test_empty_ingest_with_errors_exits_nonzero(self, monkeypatch) -> None:
+        from achizitii import cli
+
+        monkeypatch.setattr(
+            "achizitii.govpipeline.ingest_years",
+            lambda *a, **k: {
+                "ingest_version": 1,
+                "total_rows": 0,
+                "files": [{"year": 2026, "rows": 0, "error": "discovery: timed out"}],
+                "unmapped_columns": {},
+            },
+        )
+        assert cli.main(["gov", "--years", "2026"]) == 1
+
+    def test_successful_ingest_exits_zero(self, monkeypatch) -> None:
+        from achizitii import cli
+
+        monkeypatch.setattr(
+            "achizitii.govpipeline.ingest_years",
+            lambda *a, **k: {
+                "ingest_version": 1,
+                "total_rows": 1000,
+                "files": [{"year": 2026, "rows": 1000}],
+                "unmapped_columns": {},
+            },
+        )
+        assert cli.main(["gov", "--years", "2026"]) == 0
+
+    def test_partial_failure_still_succeeds(self, monkeypatch) -> None:
+        """One bad quarter among good ones is tolerated — that is the point."""
+        from achizitii import cli
+
+        monkeypatch.setattr(
+            "achizitii.govpipeline.ingest_years",
+            lambda *a, **k: {
+                "ingest_version": 1,
+                "total_rows": 500,
+                "files": [
+                    {"year": 2026, "rows": 500},
+                    {"year": 2025, "rows": 0, "error": "corrupt file"},
+                ],
+                "unmapped_columns": {},
+            },
+        )
+        assert cli.main(["gov", "--years", "2025-2026"]) == 0
+
+    def test_all_indicators_skipped_exits_nonzero(self, monkeypatch) -> None:
+        from achizitii import cli
+
+        monkeypatch.setattr(
+            "achizitii.govpipeline.run_indicators",
+            lambda **k: {
+                "date": "2026-09-06",
+                "detected_ceilings": [],
+                "results": [
+                    {"indicator": "prag-01", "skipped": "missing data: ['achizitii_directe']"},
+                    {"indicator": "divizare-01", "skipped": "missing data: ['achizitii_directe']"},
+                ],
+            },
+        )
+        assert cli.main(["indicators"]) == 1
+
+    def test_indicators_with_findings_exit_zero(self, monkeypatch) -> None:
+        from achizitii import cli
+
+        monkeypatch.setattr(
+            "achizitii.govpipeline.run_indicators",
+            lambda **k: {
+                "date": "2026-09-06",
+                "detected_ceilings": [],
+                "results": [
+                    {"indicator": "prag-01", "findings": 1241, "legal_basis": "art. 7",
+                     "name": "n", "output": "o", "sample": []},
+                    {"indicator": "divizare-01", "skipped": "missing data"},
+                ],
+            },
+        )
+        assert cli.main(["indicators"]) == 0

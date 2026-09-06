@@ -50,6 +50,24 @@ Historical archive 2007–2018 is served from `http://istoric.e-licitatie.ro` on
 
 ## 2. data.gov.ro bulk exports (primary, historical)
 
+> **data.gov.ro is unreachable from GitHub-hosted runners.**
+>
+> Measured 2026-09-06: four attempts from `ubuntu-latest`, each a 60-second connect
+> timeout, ~16 minutes total, zero bytes transferred — while the identical request from
+> a residential connection returned `200` in 0.93s. The host appears not to accept
+> connections from GitHub/Azure IP ranges.
+>
+> Consequences, all deliberate:
+> - `bulk.yml` has **no scheduled trigger**. A weekly red build nobody can fix trains
+>   people to ignore CI.
+> - It takes a `runner` input so it can be pointed at a self-hosted runner with a route
+>   to data.gov.ro.
+> - The bulk pipeline is a **local or self-hosted step**. The long-term fix is to ingest
+>   where the host is reachable and publish the derived Parquet for CI to consume.
+>
+> The SEAP `api-pub` endpoints have no such restriction and work fine from Actions —
+> `daily.yml` runs there successfully.
+
 Publisher: **Autoritatea pentru Digitalizarea României**. Licence: **OGL v1.0**.
 Dataset slugs `achizitii-publice-{YYYY}`, covering **2016 → 2026 T2**, quarterly.
 
