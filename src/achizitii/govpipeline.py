@@ -129,7 +129,7 @@ def ingest_years(
                     blob = govdata.fetch(res, GOV_RAW, client)
                     fmt = govdata.sniff(blob)
                     header, rows = govdata.read_table(blob)
-                    records, unmapped = govdata.to_records(
+                    records, unmapped, malformed = govdata.to_records(
                         header, rows, res.table, res.name
                     )
                     absent = govdata.missing_columns(header, res.table)
@@ -158,6 +158,11 @@ def ingest_years(
                 log.info("%s [%s] -> %s (%d rows)", res.name, fmt, path.name, n)
                 entry = {"year": year, "table": res.table.key, "resource": res.name,
                          "format": fmt, "rows": n}
+                if malformed:
+                    # Field-count mismatch: an unquoted delimiter inside a description
+                    # shifted every later column. Dropped rather than realigned.
+                    log.warning("%s: dropped %d malformed rows", res.name, malformed)
+                    entry["malformed_rows"] = malformed
                 if absent:
                     entry["columns_absent"] = absent
                 summary.append(entry)
@@ -171,17 +176,129 @@ def ingest_years(
     }
 
 
+# Derived at query time rather than at ingest, so the whole archive does not need
+# reprocessing when the rule changes. Mirrors normalize.contract_category.
+_CPV_DIVISION = "TRY_CAST(substr(regexp_replace(cpv, '[^0-9]', '', 'g'), 1, 2) AS INTEGER)"
+
+CATEGORIE_SQL = f"""
+CASE
+  WHEN lower(coalesce(tip_contract, '')) IN ('furnizare', 'produse') THEN 'furnizare'
+  WHEN lower(coalesce(tip_contract, '')) = 'servicii'                THEN 'servicii'
+  WHEN lower(coalesce(tip_contract, '')) IN ('lucrari', 'lucrări')   THEN 'lucrari'
+  WHEN {_CPV_DIVISION} = 45                                          THEN 'lucrari'
+  WHEN {_CPV_DIVISION} >= 50                                         THEN 'servicii'
+  WHEN {_CPV_DIVISION} >= 3                                          THEN 'furnizare'
+END AS categorie
+"""
+
+# Tables that gain the derived category column.
+_DERIVED: dict[str, str] = {
+    "achizitii_directe": CATEGORIE_SQL,
+    "contracte": CATEGORIE_SQL,
+    "fara_anunt": CATEGORIE_SQL,
+}
+
+
 def _register(con: duckdb.DuckDBPyConnection, keys: set[str]) -> set[str]:
-    """Expose each canonical table as a view over its per-year Parquet files."""
+    """Expose each canonical table as a view over its per-year Parquet files.
+
+    `achizitii_directe` and friends gain a derived `categorie`, because the declared
+    `tip_contract` is only usable from 2022 onward — earlier exports put the procedure
+    ("Cumparare directa") in that column, so filtering on it silently excluded five
+    years.
+    """
     available: set[str] = set()
     for key in keys:
         files = sorted(GOV_CORE.glob(f"{key}-*.parquet"))
         if not files:
             continue
         paths = ", ".join(f"'{f}'" for f in files)
-        con.execute(f"CREATE OR REPLACE VIEW {key} AS SELECT * FROM read_parquet([{paths}])")
+        extra = _DERIVED.get(key)
+        select = f"*, {extra}" if extra else "*"
+        con.execute(
+            f"CREATE OR REPLACE VIEW {key} AS SELECT {select} FROM read_parquet([{paths}])"
+        )
         available.add(key)
     return available
+
+
+# A column populated in neighbouring years but empty in one is a mapping failure, not a
+# fact about the world. This is the check that would have caught 2021 automatically.
+NULL_RATE_ALARM = 0.98
+"""A column this empty in a year is treated as lost, not sparse."""
+
+NULL_RATE_HEALTHY = 0.50
+"""...but only when a neighbouring year has it at least this populated."""
+
+
+def validate() -> dict[str, Any]:
+    """Cross-year sanity checks on the ingested tables.
+
+    Every data bug in this project so far has been silent: an unmatched alias yields a
+    column of NULLs, a renamed resource yields a missing year, a mistyped slug yields
+    nothing at all. None of them raise. This compares each column against its own
+    history, where such failures are obvious.
+    """
+    con = duckdb.connect()
+    available = _register(con, set(govdata.TABLES_BY_KEY))
+    problems: list[dict[str, Any]] = []
+    tables: dict[str, Any] = {}
+
+    for key in sorted(available):
+        spec = govdata.TABLES_BY_KEY[key]
+        cols = [c for c in spec.columns]
+        exprs = ", ".join(
+            f"avg(({c} IS NULL)::INT) AS {c}" for c in cols
+        )
+        rows = con.execute(
+            f"SELECT an, count(*) AS n, {exprs} FROM {key} GROUP BY an ORDER BY an"
+        ).fetch_arrow_table().to_pylist()
+        tables[key] = rows
+
+        # Per column, compare each year's null rate against the best year available.
+        for col in cols:
+            rates = {r["an"]: r[col] for r in rows if r[col] is not None}
+            if not rates:
+                continue
+            best = min(rates.values())
+            if best > NULL_RATE_HEALTHY:
+                continue  # never populated anywhere — a genuine absence, not a bug
+            for year, rate in sorted(rates.items()):
+                if rate >= NULL_RATE_ALARM:
+                    problems.append(
+                        {
+                            "table": key,
+                            "column": col,
+                            "year": year,
+                            "null_rate": round(rate, 4),
+                            "best_year_null_rate": round(best, 4),
+                            "note": "column empty this year but populated in others — "
+                                    "likely an unmatched header alias",
+                        }
+                    )
+
+    # The derived category must resolve for essentially every direct acquisition; if it
+    # does not, both the declared type and the CPV are unusable for those rows.
+    if "achizitii_directe" in available:
+        cat = con.execute(
+            "SELECT an, count(*) n, avg((categorie IS NULL)::INT) unresolved "
+            "FROM achizitii_directe GROUP BY an ORDER BY an"
+        ).fetch_arrow_table().to_pylist()
+        tables["categorie_unresolved"] = cat
+        for row in cat:
+            if row["unresolved"] and row["unresolved"] > 0.05:
+                problems.append(
+                    {
+                        "table": "achizitii_directe",
+                        "column": "categorie",
+                        "year": row["an"],
+                        "null_rate": round(row["unresolved"], 4),
+                        "note": "category unresolved from both tip_contract and CPV",
+                    }
+                )
+
+    con.close()
+    return {"tables": tables, "problems": problems, "ok": not problems}
 
 
 def detect_ceilings() -> list[dict[str, Any]]:

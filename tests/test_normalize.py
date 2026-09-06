@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from achizitii.normalize import (
+    contract_category,
     extract_pack_size,
     fold,
     normalize_item,
@@ -215,3 +216,45 @@ class TestNormalizeItem:
         )
         assert item.comparable is False
         assert item.incomparable_reason == "pret_unitar_lipsa_sau_nepozitiv"
+
+
+class TestContractCategory:
+    """Category must work across eras, not just 2022+.
+
+    2016-2018 record "Cumparare directa" (the procedure) in the contract-type column,
+    so any indicator filtering on Furnizare/Servicii silently returned nothing for
+    those years. Falling back to the CPV division makes the archive usable.
+    """
+
+    @pytest.mark.parametrize(
+        ("declared", "expected"),
+        [("Furnizare", "furnizare"), ("Servicii", "servicii"),
+         ("Lucrari", "lucrari"), ("lucrări", "lucrari"), ("PRODUSE", "furnizare")],
+    )
+    def test_declared_type_wins(self, declared: str, expected: str) -> None:
+        assert contract_category(declared, "30213100-6") == expected
+
+    @pytest.mark.parametrize(
+        ("cpv", "expected"),
+        [
+            ("45310000-3", "lucrari"),    # construction work
+            ("30213100-6", "furnizare"),  # portable computers
+            ("15897300-5", "furnizare"),  # food packages
+            ("79311100-8", "servicii"),   # survey services
+            ("50610000-4", "servicii"),   # repair services
+            ("48000000-8", "furnizare"),  # software packages are supplies
+        ],
+    )
+    def test_falls_back_to_cpv_division(self, cpv: str, expected: str) -> None:
+        assert contract_category("Cumparare directa", cpv) == expected
+
+    def test_unusable_declared_type_does_not_block_cpv(self) -> None:
+        """2016-2018 put the procedure here; it must not be mistaken for a category."""
+        assert contract_category("Cumparare directa", "45000000-7") == "lucrari"
+
+    def test_none_when_nothing_usable(self) -> None:
+        assert contract_category(None, None) is None
+        assert contract_category("Cumparare directa", None) is None
+
+    def test_malformed_cpv_is_not_guessed(self) -> None:
+        assert contract_category(None, "abc") is None
