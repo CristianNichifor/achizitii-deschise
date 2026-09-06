@@ -341,38 +341,57 @@ def _rows_csv(blob: bytes) -> tuple[list[str], list[list[str]]]:
     return rows[0], rows[1:]
 
 
+def _merge_sheet(
+    header: list[str], rows: list[list[str]]
+) -> tuple[list[str], list[list[str]]]:
+    """Fold one sheet into an accumulating table.
+
+    The legacy .xls format caps a SHEET at 65,536 rows, so large exports are split
+    across many. The 2023 Q1 direct-acquisition file holds 584,138 rows across eleven
+    sheets named "Sheet 1", "Sheet 2", "Sheet 4" and so on — non-contiguous, so every
+    sheet must be visited. Reading only the first silently discarded 519,137 rows.
+
+    Each continuation sheet repeats the header, which is dropped when it matches.
+    """
+    if not rows:
+        return header, []
+    if not header:
+        return rows[0], rows[1:]
+    return header, (rows[1:] if rows[0] == header else rows)
+
+
 def _rows_xlsx(blob: bytes) -> tuple[list[str], list[list[str]]]:
     import openpyxl
 
     wb = openpyxl.load_workbook(io.BytesIO(blob), read_only=True, data_only=True)
-    ws = wb.active
-    # Read-only mode trusts the sheet's declared dimension, and several exports declare
-    # a false one: the 2019-2020 direct-acquisition files claim max_row=1, max_col=1
-    # despite holding 500,000+ rows across 21 columns. Trusting that silently yields an
-    # empty table from a 134 MB file. reset_dimensions() makes openpyxl derive the real
-    # extent from the data while still streaming.
-    ws.reset_dimensions()
-    it = ws.iter_rows(values_only=True)
-    try:
-        header = ["" if h is None else str(h) for h in next(it)]
-    except StopIteration:
-        wb.close()
-        return [], []
-    rows = [["" if v is None else str(v) for v in row] for row in it]
+    header: list[str] = []
+    out: list[list[str]] = []
+    for ws in wb.worksheets:
+        # Read-only mode trusts the sheet's declared dimension, and several exports
+        # declare a false one: the 2019-2020 direct-acquisition files claim max_row=1,
+        # max_col=1 despite holding 500,000+ rows. reset_dimensions() derives the real
+        # extent from the data while still streaming.
+        ws.reset_dimensions()
+        rows = [["" if v is None else str(v) for v in row]
+                for row in ws.iter_rows(values_only=True)]
+        header, chunk = _merge_sheet(header, rows)
+        out.extend(chunk)
     wb.close()
-    return header, rows
+    return header, out
 
 
 def _rows_xls(blob: bytes) -> tuple[list[str], list[list[str]]]:
     import xlrd
 
     book = xlrd.open_workbook(file_contents=blob)
-    sheet = book.sheet_by_index(0)
-    if sheet.nrows == 0:
-        return [], []
-    header = [str(c) for c in sheet.row_values(0)]
-    rows = [[str(c) for c in sheet.row_values(i)] for i in range(1, sheet.nrows)]
-    return header, rows
+    header: list[str] = []
+    out: list[list[str]] = []
+    for index in range(book.nsheets):
+        sheet = book.sheet_by_index(index)
+        rows = [[str(c) for c in sheet.row_values(i)] for i in range(sheet.nrows)]
+        header, chunk = _merge_sheet(header, rows)
+        out.extend(chunk)
+    return header, out
 
 
 _ODS_NS = {
@@ -499,6 +518,42 @@ def missing_columns(header: list[str], spec: TableSpec) -> list[str]:
     columns this way without anything failing.
     """
     return sorted(set(spec.columns) - set(map_columns(header, spec)))
+
+
+MAX_PREAMBLE_SCAN = 12
+"""Rows to examine when looking for the real header."""
+
+
+def realign_header(
+    header: list[str], rows: list[list[str]], spec: TableSpec
+) -> tuple[list[str], list[list[str]]]:
+    """Skip title banners that precede the real header row.
+
+    Several exports open with a title instead of column names — the 2023 files begin
+    with a single cell reading "Raport Achizitii directe Trimestrul I 2023". Treating
+    that as the header maps no columns at all, so every record becomes all-NULL and is
+    dropped: a 167 MB file parsed to zero rows.
+
+    The real header is found by scoring candidate rows against the alias table and
+    taking the best. Returns the original split when row zero is already the best
+    candidate, so well-formed files are untouched.
+    """
+    def score(candidate: list[str]) -> int:
+        return len(map_columns(candidate, spec))
+
+    best_score = score(header)
+    best_index = -1  # -1 means "keep the current header"
+    for i, row in enumerate(rows[:MAX_PREAMBLE_SCAN]):
+        if (s := score(row)) > best_score:
+            best_score, best_index = s, i
+
+    if best_index < 0:
+        return header, rows
+    log.info(
+        "header found on row %d (%d columns matched, vs %d on row 0)",
+        best_index + 1, best_score, score(header),
+    )
+    return rows[best_index], rows[best_index + 1 :]
 
 
 def to_records(
