@@ -243,6 +243,7 @@ def validate() -> dict[str, Any]:
     con = duckdb.connect()
     available = _register(con, set(govdata.TABLES_BY_KEY))
     problems: list[dict[str, Any]] = []
+    expected: list[dict[str, Any]] = []
     tables: dict[str, Any] = {}
 
     for key in sorted(available):
@@ -265,18 +266,27 @@ def validate() -> dict[str, Any]:
             if best > NULL_RATE_HEALTHY:
                 continue  # never populated anywhere — a genuine absence, not a bug
             for year, rate in sorted(rates.items()):
-                if rate >= NULL_RATE_ALARM:
-                    problems.append(
-                        {
-                            "table": key,
-                            "column": col,
-                            "year": year,
-                            "null_rate": round(rate, 4),
-                            "best_year_null_rate": round(best, 4),
-                            "note": "column empty this year but populated in others — "
-                                    "likely an unmatched header alias",
-                        }
+                if rate < NULL_RATE_ALARM:
+                    continue
+                known = govdata.is_known_gap(key, col, year)
+                record = {
+                    "table": key,
+                    "column": col,
+                    "year": year,
+                    "null_rate": round(rate, 4),
+                    "best_year_null_rate": round(best, 4),
+                }
+                if known:
+                    # A documented publishing gap, not a defect. Reported so the
+                    # limitation stays visible, but it must not fail the check.
+                    record["known_gap"] = known["reason"]
+                    expected.append(record)
+                else:
+                    record["note"] = (
+                        "column empty this year but populated in others — "
+                        "likely an unmatched header alias"
                     )
+                    problems.append(record)
 
     # The derived category must resolve for essentially every direct acquisition; if it
     # does not, both the declared type and the CPV are unusable for those rows.
@@ -322,7 +332,12 @@ def validate() -> dict[str, Any]:
             tables["implausible_award_vs_estimate"] = suspect
 
     con.close()
-    return {"tables": tables, "problems": problems, "ok": not problems}
+    return {
+        "tables": tables,
+        "problems": problems,
+        "known_gaps": expected,
+        "ok": not problems,
+    }
 
 
 def detect_ceilings() -> list[dict[str, Any]]:

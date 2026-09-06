@@ -12,10 +12,12 @@ from achizitii.govdata import (
     ACHIZITII_DIRECTE,
     CONTRACTE,
     INITIERE,
+    KNOWN_COLUMN_GAPS,
     MODIFICARI,
     TABLES,
     _header_key,
     _sniff_delimiter,
+    is_known_gap,
     map_columns,
     missing_columns,
     read_table,
@@ -349,3 +351,31 @@ class TestEarlyEraSchemas:
     def test_contracte_prefers_ron_over_contract_currency(self) -> None:
         m = map_columns(self.CONTRACTE_2017, CONTRACTE)
         assert self.CONTRACTE_2017[m["valoare_ron"]] == "ValoareRON"
+
+
+class TestKnownColumnGaps:
+    """A checker that reports genuine publishing gaps as defects gets ignored."""
+
+    def test_offer_count_gap_is_documented(self) -> None:
+        gap = is_known_gap("contracte", "numar_oferte", 2020)
+        assert gap is not None
+        assert "2018" in gap["reason"]
+
+    def test_offer_count_present_in_early_years(self) -> None:
+        """It must NOT be excused for the years that do publish it."""
+        assert is_known_gap("contracte", "numar_oferte", 2017) is None
+
+    def test_subcontracting_gap_is_a_convention_change(self) -> None:
+        """Blank means 'not subcontracted' in 2016-2017, not 'unknown'."""
+        gap = is_known_gap("contracte", "subcontractat", 2016)
+        assert gap is not None and "convention" in gap["reason"].lower()
+        assert is_known_gap("contracte", "subcontractat", 2020) is None
+
+    def test_unknown_column_is_never_excused(self) -> None:
+        assert is_known_gap("contracte", "valoare_ron", 2020) is None
+        assert is_known_gap("achizitii_directe", "autoritate_cui", 2021) is None
+
+    def test_every_gap_states_a_reason(self) -> None:
+        for (table, column), entry in KNOWN_COLUMN_GAPS.items():
+            assert entry["reason"].strip(), (table, column)
+            assert len(entry["reason"]) > 40, f"{table}.{column}: reason too thin"

@@ -172,18 +172,20 @@ INITIERE = TableSpec(
             "autoritate contractanta", "denumireac",
             "denumire autoritate contractanta",  # 2016
         ),
-        "autoritate_cui": _c("cui autoritate contractanta", "cui"),
+        "autoritate_cui": _c("cui autoritate contractanta", "cui", "cui ac"),
         "tip_anunt": _c("tip anunt", "tip"),
         "tip_procedura": _c("tip procedura", "tipprocedura"),
         "stare_procedura": _c("stare procedura"),
-        "nr_anunt_initiere": _c("numar anunt initiere", "numaranunt"),
+        "nr_anunt_initiere": _c(
+            "numar anunt initiere", "numaranunt", "numar anunt invitatie"
+        ),
         "data_publicare": _c("data publicare", "datapublicare"),
         "tip_contract": _c("tip contract", "tipcontract"),
         "criteriu_atribuire": _c("criteriuatribuire", "criteriu de atribuire"),
         "modalitate_atribuire": _c("modalitate de atribuire", "modalitatedesfasurare"),
         "loturi": _c("contractul este impartit in loturi"),
         "denumire": _c("denumire procedura"),
-        "cpv": _c("cod cpv", "maincpv"),
+        "cpv": _c("cod cpv", "maincpv", "main cpv code"),
         "cpv_denumire": _c("denumire cpv", "maincpvname", "denumire cod cpv"),  # 2016
         "valoare_estimata_ron": _c("valoare estimata procedura ron", "valoareestimata"),
         # County, present ONLY in the 2016-2018 exports. The modern ones dropped it,
@@ -214,6 +216,77 @@ MODIFICARI = TableSpec(
 
 TABLES = (ACHIZITII_DIRECTE, CONTRACTE, FARA_ANUNT, INITIERE, MODIFICARI)
 TABLES_BY_KEY = {t.key: t for t in TABLES}
+
+
+# Columns that are legitimately empty in some years. Without this, the validation
+# harness reports genuine publishing gaps as defects — and a checker that cries wolf
+# gets ignored, which defeats the point of having one.
+#
+# Every entry needs a reason. "It looked fine" is not one: each of these was confirmed
+# against the source before being listed.
+KNOWN_COLUMN_GAPS: dict[tuple[str, str], dict[str, Any]] = {
+    ("contracte", "numar_oferte"): {
+        "years": range(2019, 2027),
+        "reason": (
+            "The publisher stopped including NumarOfertePrimite after 2018. This is a "
+            "real loss of transparency, not a mapping failure: single-bidder rate is "
+            "the strongest indicator in the literature and cannot be computed for these "
+            "years from the bulk exports."
+        ),
+    },
+    ("contracte", "subcontractat"): {
+        "years": (2016, 2017, 2018),
+        "reason": (
+            "Reporting convention change, not absence. 2016-2017 record only 'DA' and "
+            "leave the rest blank; 2019 onward record 'DA' and 'NU' explicitly. A blank "
+            "in the early years therefore means 'not subcontracted' — reading it as "
+            "missing would understate subcontracting."
+        ),
+    },
+    ("contracte", "valoare_estimata_ron"): {
+        "years": range(2022, 2027),
+        "reason": (
+            "The estimate stopped being carried on the contract row. For later years it "
+            "must come from the initiation notice, which reintroduces the framework "
+            "double-counting problem."
+        ),
+    },
+    ("contracte", "licitatie_electronica"): {
+        "years": range(2019, 2027),
+        "reason": "CuLicitatieElectronica appears only in the 2016-2018 exports.",
+    },
+    ("initiere", "tip_anunt"): {
+        "years": (2016, 2017, 2018),
+        "reason": (
+            "The 2016-2018 initiation exports carry no notice-type column at all; "
+            "TIP_ANUNT first appears in the 2019 snake-case format. Every row in those "
+            "files is a participation notice, so the column carried no information."
+        ),
+    },
+    ("initiere", "stare_procedura"): {
+        "years": range(2016, 2027),
+        "reason": (
+            "Procedure status is not published in any bulk initiation export examined "
+            "(2016-2026); it exists only in the SEAP API. Kept in the schema because "
+            "the API path populates it."
+        ),
+    },
+    ("initiere", "loturi"): {
+        "years": range(2016, 2027),
+        "reason": (
+            "The lot-split flag is not published in the bulk initiation exports; only "
+            "the contracts table carries lot numbers."
+        ),
+    },
+}
+
+
+def is_known_gap(table: str, column: str, year: int) -> dict[str, Any] | None:
+    """Return the documented reason a column is empty that year, or None."""
+    entry = KNOWN_COLUMN_GAPS.get((table, column))
+    if entry and year in entry["years"]:
+        return entry
+    return None
 
 
 # --------------------------------------------------------------------- format sniff
