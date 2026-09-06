@@ -122,6 +122,47 @@ def looks_like_bundle(*texts: str | None) -> bool:
     return any(_BUNDLE_IN_NAME.search(t) for t in texts if t)
 
 
+# Procurement category derived from the CPV division. Used when the declared contract
+# type is unusable, which is most of the archive: 2016-2018 record "Cumparare directa"
+# (the procedure) in the type column, and 2019-2021 vary again. Only 2022+ reliably say
+# Furnizare / Servicii / Lucrari — so any indicator filtering on category silently
+# returned nothing for the earlier years.
+#
+# CPV structure: division 45 is construction works; 50 and above are services; the rest
+# (03-44, 48) are supplies. This is the standard convention in procurement analysis.
+# It is a heuristic on the boundary cases, so the DECLARED value always wins when valid.
+_CATEGORY_BY_DECLARED = {
+    "furnizare": "furnizare",
+    "produse": "furnizare",
+    "servicii": "servicii",
+    "lucrari": "lucrari",
+    "lucrări": "lucrari",
+}
+
+
+def contract_category(tip_contract: str | None, cpv: str | None) -> str | None:
+    """Canonical category: 'furnizare' | 'servicii' | 'lucrari', or None if unknowable.
+
+    Prefers the declared type; falls back to the CPV division so that the pre-2022
+    archive is usable at all.
+    """
+    if tip_contract:
+        declared = _CATEGORY_BY_DECLARED.get(fold(tip_contract))
+        if declared:
+            return declared
+    if cpv:
+        digits = re.sub(r"\D", "", cpv)
+        if len(digits) >= 2:
+            division = int(digits[:2])
+            if division == 45:
+                return "lucrari"
+            if division >= 50:
+                return "servicii"
+            if division >= 3:
+                return "furnizare"
+    return None
+
+
 def parse_ro_number(value: str | float | None) -> float | None:
     """Parse a Romanian-formatted number: '1.234,56' -> 1234.56.
 
