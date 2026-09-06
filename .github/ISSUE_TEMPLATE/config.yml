@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: "Cum funcționează corectările și dreptul la replică"
+    url: https://github.com/CristianNichifor/achizitii-deschise/blob/main/CORRECTIONS.md
+    about: "Cine poate cere o corectare, ce se întâmplă apoi, și în cât timp răspundem."
+  - name: "Metodologie — ce înseamnă (și ce NU înseamnă) un indicator"
+    url: https://github.com/CristianNichifor/achizitii-deschise/blob/main/METHODOLOGY.md
+    about: "Baza legală a fiecărui indicator, limitele lui, și explicațiile nevinovate posibile."
+  - name: "Sursele de date"
+    url: https://github.com/CristianNichifor/achizitii-deschise/blob/main/docs/sources.md
+    about: "De unde provin datele, ce lipsește din ele, și de ce."
