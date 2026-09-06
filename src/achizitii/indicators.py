@@ -114,7 +114,7 @@ def corroborate_ceiling_sql(category: str = "goods_services") -> str:
     return f"""
     WITH d AS (
       SELECT an, TRY_CAST(valoare_ron AS DOUBLE) v FROM achizitii_directe
-      WHERE lower(coalesce(tip_contract,'')) IN {types}
+      WHERE categorie IN {types}
         AND TRY_CAST(valoare_ron AS DOUBLE) > 0
     )
     SELECT an,
@@ -139,7 +139,7 @@ def detect_ceiling_sql(window: float = CEILING_WINDOW) -> str:
     WITH d AS (
       SELECT an, TRY_CAST(valoare_ron AS DOUBLE) v
       FROM achizitii_directe
-      WHERE lower(coalesce(tip_contract,'')) IN ('furnizare','servicii')
+      WHERE categorie IN ('furnizare','servicii')
         AND TRY_CAST(valoare_ron AS DOUBLE) BETWEEN 20000 AND 2000000
     ),
     candidates AS (
@@ -218,7 +218,7 @@ PRAG_01 = Indicator(
       SELECT TRY_CAST(valoare_ron AS DOUBLE) v, tip_contract, autoritate, autoritate_cui,
              furnizor, nr_achizitie, data_publicare
       FROM achizitii_directe
-      WHERE lower(coalesce(tip_contract,'')) IN ('furnizare','servicii')
+      WHERE categorie IN ('furnizare','servicii')
     ),
     banda AS (
       SELECT *, floor(v / 10000) * 10000 AS banda FROM d

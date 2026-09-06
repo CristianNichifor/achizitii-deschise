@@ -107,7 +107,8 @@ class TestToRecords:
     def test_maps_and_reports_unmapped(self) -> None:
         header = ["Autoritate contractanta", "Valoare achizitie (RON)", "Coloana Noua"]
         rows = [["PRIMARIA X", "1234.5", "ceva"]]
-        recs, unmapped = to_records(header, rows, ACHIZITII_DIRECTE, "test.xlsx")
+        recs, unmapped, malformed = to_records(header, rows, ACHIZITII_DIRECTE, "test.xlsx")
+        assert malformed == 0
         assert recs[0]["autoritate"] == "PRIMARIA X"
         assert recs[0]["valoare_ron"] == "1234.5"
         assert recs[0]["sursa"] == "test.xlsx"
@@ -115,14 +116,14 @@ class TestToRecords:
         assert unmapped == ["Coloana Noua"]         # surfaced, never silently dropped
 
     def test_blank_rows_skipped(self) -> None:
-        recs, _ = to_records(
+        recs, _, _ = to_records(
             ["Autoritate contractanta"], [[""], ["PRIMARIA Y"]], ACHIZITII_DIRECTE, "s"
         )
         assert len(recs) == 1
 
     def test_short_rows_do_not_crash(self) -> None:
         header = ["Autoritate contractanta", "Valoare achizitie (RON)"]
-        recs, _ = to_records(header, [["doar-un-camp"]], ACHIZITII_DIRECTE, "s")
+        recs, _, _ = to_records(header, [["doar-un-camp"]], ACHIZITII_DIRECTE, "s")
         assert recs[0]["valoare_ron"] is None
 
 
@@ -260,3 +261,29 @@ class TestFrameworkColumns:
         m = map_columns(header, CONTRACTE)
         assert m["tip_incheiere"] == 0
         assert m["incheiat_prin"] == 1
+
+
+class TestMalformedRows:
+    """The 2016-2018 exports are caret-delimited and unquoted."""
+
+    def test_overlong_rows_dropped_and_counted(self) -> None:
+        """A "^" inside a description splits into an extra field and shifts every
+        later column, putting product text in `tip_contract` and CUIs in `cpv`.
+        Such a row cannot be realigned, so it is dropped rather than kept as garbage.
+        """
+        header = ["Autoritate contractanta", "Denumire achizitie", "Cod CPV"]
+        rows = [
+            ["PRIMARIA X", "produs normal", "30213100-6"],
+            ["PRIMARIA Y", "produs cu", "caret", "30213100-6"],  # shifted
+        ]
+        recs, _, malformed = to_records(header, rows, ACHIZITII_DIRECTE, "s")
+        assert malformed == 1
+        assert len(recs) == 1
+        assert recs[0]["autoritate"] == "PRIMARIA X"
+
+    def test_short_rows_are_not_malformed(self) -> None:
+        """Trailing empty fields are routinely omitted and must still be ingested."""
+        header = ["Autoritate contractanta", "Denumire achizitie", "Cod CPV"]
+        recs, _, malformed = to_records(header, [["PRIMARIA Z"]], ACHIZITII_DIRECTE, "s")
+        assert malformed == 0
+        assert len(recs) == 1

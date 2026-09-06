@@ -65,6 +65,12 @@ def main(argv: list[str] | None = None) -> int:
         help="report which tables each year matches, without downloading anything",
     )
 
+    # -- validate ------------------------------------------------------------------
+    sub.add_parser(
+        "validate",
+        help="cross-year sanity checks on ingested data (null rates, category coverage)",
+    )
+
     # -- indicators ----------------------------------------------------------------
     ind = sub.add_parser("indicators", help="run risk indicators over ingested bulk data")
     ind.add_argument("--only", nargs="*", default=None, help="indicator identifiers")
@@ -111,6 +117,19 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 f"ERROR: ingested 0 rows; {len(errored)} resource(s) failed. "
                 f"First: {errored[0]['error']}",
+                file=sys.stderr,
+            )
+            return 1
+        return 0
+
+    if args.command == "validate":
+        from .govpipeline import validate
+
+        report = validate()
+        _emit(report)
+        if not report["ok"]:
+            print(
+                f"ERROR: {len(report['problems'])} data-integrity problem(s) found.",
                 file=sys.stderr,
             )
             return 1
