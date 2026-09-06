@@ -1,16 +1,26 @@
 name: bulk ingest and risk indicators
 
-# The data.gov.ro exports are published quarterly, so a daily run would download
-# hundreds of MB to rediscover nothing. Weekly is already generous.
+# DOES NOT WORK ON GITHUB-HOSTED RUNNERS.
+#
+# data.gov.ro does not accept connections from GitHub/Azure IP ranges. Measured
+# 2026-09-06: four retries, each a 60s connect timeout, ~16 minutes total, zero bytes —
+# while the identical request from a residential connection returned 200 in 0.93s.
+#
+# The scheduled trigger is therefore removed: it would fail every week and train
+# everyone to ignore a red build. Run this on a self-hosted runner with a route to
+# data.gov.ro, or ingest locally and publish the derived Parquet for CI to consume.
+# See docs/sources.md.
 on:
-  schedule:
-    - cron: "40 5 * * 1"
   workflow_dispatch:
     inputs:
       years:
         description: "Years to ingest, e.g. 2026 or 2016-2026"
         required: false
         default: "2026"
+      runner:
+        description: "Runner label — 'ubuntu-latest' cannot reach data.gov.ro"
+        required: false
+        default: "ubuntu-latest"
 
 concurrency:
   group: ingest-bulk
@@ -21,7 +31,7 @@ permissions:
 
 jobs:
   bulk:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
     timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
