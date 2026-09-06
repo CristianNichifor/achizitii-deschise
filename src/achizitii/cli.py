@@ -78,6 +78,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     ceil.add_argument("--years", type=_years, default=None)
 
+    # -- cluster -------------------------------------------------------------------
+    cl = sub.add_parser(
+        "cluster",
+        help="propose synonym clusters for human review (never applied automatically)",
+    )
+    cl.add_argument("--cpv", default=None, help="restrict to a CPV prefix, e.g. 3911")
+    cl.add_argument("--limit", type=int, default=40, help="candidate keys to send")
+    cl.add_argument(
+        "--dry-run", action="store_true",
+        help="show candidates and prompt size without calling any API (needs no key)",
+    )
+
     # -- indicators ----------------------------------------------------------------
     ind = sub.add_parser("indicators", help="run risk indicators over ingested bulk data")
     ind.add_argument("--only", nargs="*", default=None, help="indicator identifiers")
@@ -146,6 +158,15 @@ def main(argv: list[str] | None = None) -> int:
         from .govpipeline import ceilings_report
 
         _emit(ceilings_report(args.years))
+        return 0
+
+    if args.command == "cluster":
+        from .govpipeline import propose_clusters
+
+        result = propose_clusters(args.cpv, args.limit, args.dry_run)
+        _emit(result)
+        # Unavailability is an expected outcome for a free experimental endpoint, not a
+        # pipeline failure — nothing downstream depends on it.
         return 0
 
     if args.command == "indicators":
