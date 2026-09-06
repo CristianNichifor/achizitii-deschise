@@ -82,3 +82,60 @@ class TestProductKey:
     def test_empty_description(self) -> None:
         assert product_key(None).key == ""
         assert product_key("", "30213100-6").key == "30213100"
+
+
+class TestUninformativeDescriptions:
+    """Some descriptions name no product at all.
+
+    Counts measured across 2016-2021 direct acquisitions (15.7M rows): "conform
+    descriere" 19,281, "-" 12,277, "." 8,217, "achizitie directa" 7,711, "conform
+    oferta" 6,845 — roughly 66,800 rows. They are real spending and are kept, but
+    nothing distinguishes one from another, so grouping them would average unrelated
+    products together.
+    """
+
+    @pytest.mark.parametrize(
+        "text",
+        ["conform descriere", "-", ".", "achizitie directa", "conform oferta",
+         "cumparare directa", "materiale", "conform caiet de sarcini", "diverse",
+         "conform specificatiilor", "n/a", "...", "  "],
+    )
+    def test_placeholders_are_flagged(self, text: str) -> None:
+        p = product_key(text, "30213100-6")
+        assert p.informative is False
+        assert p.uninformative_reason
+
+    @pytest.mark.parametrize("text", ["banane", "oua", "cartofi", "morcovi", "mere",
+                                      "lamai", "ceapa", "alimente"])
+    def test_short_real_products_are_kept(self, text: str) -> None:
+        """Short does NOT mean uninformative — these are among the most common
+        descriptions in the archive and are perfectly good product names."""
+        p = product_key(text, "15800000-6")
+        assert p.informative is True
+        assert text in p.key
+
+    def test_buyer_name_as_description_is_flagged(self) -> None:
+        """A 2016 quirk (0.47% of rows, near zero since): the buyer typed their own
+        name into the description field."""
+        p = product_key(
+            "AGENTIA NATIONALA PENTRU PROTECTIA MEDIULUI",
+            "71356300-1",
+            autoritate="Agentia Nationala pentru Protectia Mediului",
+        )
+        assert p.informative is False
+        assert p.uninformative_reason == "descriere_egala_cu_autoritatea"
+
+    def test_same_text_without_matching_authority_is_kept(self) -> None:
+        p = product_key("AGENTIA NATIONALA PENTRU PROTECTIA MEDIULUI", "71356300-1",
+                        autoritate="Primaria Cluj-Napoca")
+        assert p.informative is True
+
+    def test_uninformative_rows_do_not_form_product_groups(self) -> None:
+        """They key on CPV alone, so they never merge into a real product group."""
+        placeholder = product_key("conform descriere", "30213100-6")
+        real = product_key("Laptop Dell Inspiron", "30213100-6")
+        assert placeholder.key == "30213100"
+        assert placeholder.key != real.key
+
+    def test_missing_description(self) -> None:
+        assert product_key(None, "30213100-6").uninformative_reason == "descriere_lipsa"
