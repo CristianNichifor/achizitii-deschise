@@ -1,0 +1,82 @@
+name: bulk ingest and risk indicators
+
+# The data.gov.ro exports are published quarterly, so a daily run would download
+# hundreds of MB to rediscover nothing. Weekly is already generous.
+on:
+  schedule:
+    - cron: "40 5 * * 1"
+  workflow_dispatch:
+    inputs:
+      years:
+        description: "Years to ingest, e.g. 2026 or 2016-2026"
+        required: false
+        default: "2026"
+
+concurrency:
+  group: ingest-bulk
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  bulk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -e ".[dev]"
+
+      - name: Test
+        run: pytest -q
+
+      # Downloads are large and immutable once published, so a hit here saves
+      # several hundred MB of transfer from data.gov.ro every run.
+      - name: Restore download cache
+        uses: actions/cache@v4
+        with:
+          path: data/gov_raw
+          key: gov-raw-${{ inputs.years || '2026' }}-${{ github.run_id }}
+          restore-keys: |
+            gov-raw-${{ inputs.years || '2026' }}-
+            gov-raw-
+
+      - name: Ingest bulk exports
+        run: achizitii gov --years "${{ inputs.years || '2026' }}"
+
+      - name: Run indicators
+        run: achizitii indicators > findings-summary.json
+
+      - name: Report
+        run: |
+          python - <<'PY'
+          import json
+          import pathlib
+          summary = json.loads(pathlib.Path("findings-summary.json").read_text())
+          print(f"evaluated as of {summary['date']}\n")
+          for r in summary["results"]:
+              if "findings" in r:
+                  print(f"  {r['indicator']:20} {r['findings']:>8,}  [{r['legal_basis']}]")
+              else:
+                  print(f"  {r['indicator']:20} SKIPPED: {r.get('skipped') or r.get('error')}")
+          print(
+              "\nFindings report PATTERNS REQUIRING REVIEW, never conclusions. "
+              "See METHODOLOGY.md."
+          )
+          PY
+
+      - name: Upload findings
+        uses: actions/upload-artifact@v4
+        with:
+          name: findings-${{ github.run_id }}
+          path: |
+            data/findings
+            findings-summary.json
+          retention-days: 90
+          if-no-files-found: warn
