@@ -62,9 +62,16 @@ def ingest_years(
 
     with govdata.make_client() as client:
         for year in years:
-            resources = [
-                r for r in govdata.discover(year, client) if r.table.key in wanted
-            ]
+            # Discovery sits outside the per-resource guard below, so without its own
+            # handler one unreachable year aborts an entire multi-year backfill.
+            try:
+                found = govdata.discover(year, client)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("%d: discovery FAILED (%s)", year, exc)
+                summary.append({"year": year, "rows": 0, "error": f"discovery: {exc}"[:200]})
+                continue
+
+            resources = [r for r in found if r.table.key in wanted]
             if not resources:
                 log.warning("%d: no matching resources", year)
                 continue

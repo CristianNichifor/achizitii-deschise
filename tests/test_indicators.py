@@ -11,6 +11,7 @@ from achizitii.indicators import (
     INDICATORS,
     INDICATORS_BY_ID,
     THRESHOLDS,
+    corroborate_ceiling_sql,
     detect_ceiling_sql,
     threshold_for,
 )
@@ -62,12 +63,16 @@ class TestThresholds:
     def test_verified_threshold_returned(self) -> None:
         assert threshold_for(date(2026, 1, 1), "goods_services") == 270_120.0
 
-    def test_works_ceiling_is_unknown_not_guessed(self) -> None:
-        """Sources disagree (900,000 vs 900,400) and it is unconfirmed against data.
+    def test_works_ceiling_is_900_400_not_900_000(self) -> None:
+        """Sources disagreed; the data settled it.
 
-        None must mean "unknown", so callers skip rather than substitute a default.
+        H1 2026 works acquisitions: 20 records in (900,000, 900,400] and ZERO in
+        (900,400, 910,000]. That excludes 900,000 outright and pins 900,400.
         """
-        assert threshold_for(date(2026, 1, 1), "works") is None
+        assert threshold_for(date(2026, 1, 1), "works") == 900_400.0
+
+    def test_unknown_category_falls_back_to_goods_services(self) -> None:
+        assert threshold_for(date(2026, 1, 1), "produse") == 270_120.0
 
     def test_unverified_period_returns_none(self) -> None:
         """A wrong threshold invents findings — refusing to answer is the safe failure."""
@@ -96,3 +101,17 @@ class TestCeilingDetection:
 
     def test_window_is_configurable(self) -> None:
         assert "5000" in detect_ceiling_sql(window=5000.0)
+
+
+class TestCorroboration:
+    def test_scopes_by_category(self) -> None:
+        assert "'lucrari'" in corroborate_ceiling_sql("works")
+        gs = corroborate_ceiling_sql("goods_services")
+        assert "'furnizare','servicii'" in gs and "lucrari" not in gs
+
+    def test_uses_declared_threshold_parameter(self) -> None:
+        """Corroboration must test a specific declared value, not rediscover a cliff."""
+        assert "$prag" in corroborate_ceiling_sql()
+
+    def test_reports_exceedance_share(self) -> None:
+        assert "pct_peste" in corroborate_ceiling_sql()
