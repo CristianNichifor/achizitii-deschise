@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import re
 import zipfile
 from typing import ClassVar
 
@@ -379,3 +380,48 @@ class TestKnownColumnGaps:
         for (table, column), entry in KNOWN_COLUMN_GAPS.items():
             assert entry["reason"].strip(), (table, column)
             assert len(entry["reason"]) > 40, f"{table}.{column}: reason too thin"
+
+
+class TestDeclaredDimensions:
+    """Some exports declare a false sheet extent."""
+
+    def _xlsx(self, declared_dim: str, rows: int) -> bytes:
+        """Build an xlsx whose declared dimension may understate the real data."""
+        import openpyxl
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.append(["CASTIGATOR", "CASTIGATOR_CUI", "VALOARE_RON"])
+        for i in range(rows):
+            ws.append([f"FIRMA {i}", f"{1000 + i}", f"{100 * i}"])
+        buf = io.BytesIO()
+        wb.save(buf)
+        blob = buf.getvalue()
+        # Rewrite the declared dimension to the (false) value under test.
+        out = io.BytesIO()
+        with zipfile.ZipFile(io.BytesIO(blob)) as src, zipfile.ZipFile(out, "w") as dst:
+            for item in src.namelist():
+                data = src.read(item)
+                if item.endswith("sheet1.xml"):
+                    data = re.sub(
+                        rb'<dimension ref="[^"]*"/>',
+                        f'<dimension ref="{declared_dim}"/>'.encode(),
+                        data,
+                    )
+                dst.writestr(item, data)
+        return out.getvalue()
+
+    def test_false_dimension_does_not_truncate(self) -> None:
+        """The 2019-2020 exports claim max_row=1, max_col=1 over 500,000+ real rows.
+
+        Trusting that yields an empty table from a 134 MB file — silently, because an
+        empty parse looks identical to an empty dataset.
+        """
+        header, rows = read_table(self._xlsx("A1:A1", rows=25))
+        assert len(header) == 3, header
+        assert len(rows) == 25
+
+    def test_honest_dimension_still_works(self) -> None:
+        header, rows = read_table(self._xlsx("A1:C11", rows=10))
+        assert len(header) == 3
+        assert len(rows) == 10
