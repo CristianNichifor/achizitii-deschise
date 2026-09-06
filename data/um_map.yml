@@ -5,7 +5,12 @@
 # Without collapsing these, every per-unit aggregate is wrong.
 #
 # Each canonical unit declares:
-#   aliases     — lowercase, diacritic-folded forms that map to it
+#   uncefact    — UN/CEFACT Recommendation 20 common code. This is the scheme OCDS
+#                 specifies for `item.unit.id` (`unit.scheme: "UNCEFACT"`), so emitting
+#                 it makes our releases internationally comparable rather than
+#                 Romania-specific. Codes validated against the UN/CEFACT codelist
+#                 published by ProZorro (ProzorroUKR/standards, Apache-2.0).
+#   aliases     — lowercase, diacritic-folded forms that map to this unit
 #   comparable  — may unit prices be compared across records for this unit?
 #   dimension   — for future unit conversion (not yet applied)
 #
@@ -17,89 +22,109 @@
 
 units:
   buc:
+    uncefact: H87        # piece
     dimension: count
     comparable: true
     aliases: [buc, buc., bucata, bucati, bucată, bucăți, bucata., piesa, piesă, pcs, pc, ex, exemplar, unitate, unit, um, buc/set]
 
   kg:
+    uncefact: KGM
     dimension: mass
     comparable: true
     aliases: [kg, kg., kilogram, kilograme, kgr]
   g:
+    uncefact: GRM
     dimension: mass
     comparable: true
     aliases: [g, gr, gram, grame]
   t:
+    uncefact: TNE
     dimension: mass
     comparable: true
     aliases: [t, to, tona, tone, tonă, tona metrica]
 
   l:
+    uncefact: LTR
     dimension: volume
     comparable: true
     aliases: [l, litru, litri, lt, ltr]
   ml:
+    uncefact: MLT
     dimension: volume
     comparable: true
     aliases: [ml, mililitru, mililitri]
   mc:
+    uncefact: MTQ        # cubic metre
     dimension: volume
     comparable: true
     aliases: [mc, m3, "m³", metru cub, metri cubi, mc.]
 
   m:
+    uncefact: MTR
     dimension: length
     comparable: true
     aliases: [m, m., metru, metri, ml liniar, metru liniar, metri liniari]
   km:
+    uncefact: KMT
     dimension: length
     comparable: true
     aliases: [km, kilometru, kilometri]
   mp:
+    uncefact: MTK        # square metre
     dimension: area
     comparable: true
     aliases: [mp, m2, "m²", metru patrat, metri patrati, metru pătrat, metri pătrați, mp.]
 
   ora:
+    uncefact: HUR
     dimension: time
     comparable: true
     aliases: [ora, ore, oră, h, hr, ora/om, om-ora, om ora]
   zi:
+    uncefact: DAY
     dimension: time
     comparable: true
     aliases: [zi, zile, zi/om, om-zi]
   luna:
+    uncefact: MON
     dimension: time
     comparable: true
     aliases: [luna, luni, lună, month]
   an:
+    uncefact: ANN
     dimension: time
     comparable: true
     aliases: [an, ani, year]
 
   kwh:
+    uncefact: KWH
     dimension: energy
     comparable: true
     aliases: [kwh, kw/h, kwh., kilowatt ora, mwh]
 
   # ---- BUNDLE UNITS: real spending, but not price-comparable ----
   set:
+    uncefact: SET
     dimension: bundle
     comparable: false
     aliases: [set, seturi, kit, kituri, ansamblu, garnitura, garnitură]
   pachet:
+    uncefact: PK         # pack
     dimension: bundle
     comparable: false
     aliases: [pachet, pachete, pak, pack, colet, bax, baxuri, pachet servicii]
   cutie:
+    uncefact: BX         # box
     dimension: bundle
     comparable: false
     aliases: [cutie, cutii, box, caseta, casetă, flacon, flacoane, doza, doză, doze, blister]
   lot:
+    uncefact: LS         # lump sum
     dimension: bundle
     comparable: false
     aliases: [lot, loturi, partida, partidă, transa, transă]
   serviciu:
+    uncefact: E48        # service unit
     dimension: bundle
     comparable: false
     aliases: [serviciu, servicii, prestatie, prestație, lucrare, lucrari, lucrări, proiect, abonament, contract]

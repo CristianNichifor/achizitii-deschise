@@ -42,6 +42,8 @@ class Unit:
     canonical: str
     dimension: str
     comparable: bool
+    uncefact: str | None = None
+    """UN/CEFACT Recommendation 20 common code, the scheme OCDS uses for `unit.id`."""
 
 
 @functools.lru_cache(maxsize=1)
@@ -50,14 +52,19 @@ def _unit_index() -> dict[str, Unit]:
     spec = yaml.safe_load(path.read_text(encoding="utf-8"))
     index: dict[str, Unit] = {}
     for canonical, body in spec["units"].items():
-        unit = Unit(canonical, body["dimension"], bool(body["comparable"]))
+        unit = Unit(
+            canonical,
+            body["dimension"],
+            bool(body["comparable"]),
+            body.get("uncefact"),
+        )
         index[fold(canonical)] = unit
         for alias in body.get("aliases", []):
             index[fold(str(alias))] = unit
     return index
 
 
-UNKNOWN = Unit("necunoscut", "unknown", False)
+UNKNOWN = Unit("necunoscut", "unknown", False, None)
 
 
 def normalize_unit(raw: str | None) -> Unit:
@@ -99,6 +106,22 @@ def extract_pack_size(*texts: str | None) -> int | None:
     return None
 
 
+# Buyers frequently book a bundle under a COUNT unit: "PACHET ALIMENTAR", qty 1,
+# um "bucata". The unit field says piece; the item is a package of unknown contents.
+# Unit-based detection alone therefore under-reports bundles, so the description is
+# checked too. Anchored to word starts to avoid matching "Setup", "Kituri chirurgicale"
+# is intentionally matched (it is a kit), "Cutie de viteze" (a gearbox — a real single
+# part) is excluded by requiring the bundle word not to be followed by "de".
+_BUNDLE_IN_NAME = re.compile(
+    r"(?i)\b(pachet|set|kit|colet|bax|lot|ansamblu|garnitura|garnitură)\b(?!\s+de\s)"
+)
+
+
+def looks_like_bundle(*texts: str | None) -> bool:
+    """True when the item description names a bundle regardless of its declared unit."""
+    return any(_BUNDLE_IN_NAME.search(t) for t in texts if t)
+
+
 def parse_ro_number(value: str | float | None) -> float | None:
     """Parse a Romanian-formatted number: '1.234,56' -> 1234.56.
 
@@ -134,6 +157,7 @@ class NormalizedItem:
     quantity: float | None
     unit_raw: str | None
     unit: str
+    unit_uncefact: str | None
     dimension: str
     pack_size: int | None
     unit_price_ron: float | None
@@ -179,6 +203,10 @@ def normalize_item(
         # A bundle of unknown size. Real spending, but its unit price means nothing
         # next to another buyer's differently-sized bundle.
         comparable, reason = False, "unitate_de_tip_pachet_fara_marime_cunoscuta"
+    elif pack is None and looks_like_bundle(description, long_description):
+        # Declared unit is a count, but the description names a bundle
+        # ("PACHET ALIMENTAR", qty 1, um "bucata"). Trust the description.
+        comparable, reason = False, "descriere_de_tip_pachet_fara_marime_cunoscuta"
 
     return NormalizedItem(
         description=description,
@@ -187,6 +215,7 @@ def normalize_item(
         quantity=quantity,
         unit_raw=unit_raw,
         unit=unit.canonical,
+        unit_uncefact=unit.uncefact,
         dimension=unit.dimension,
         pack_size=pack,
         unit_price_ron=unit_price_ron,

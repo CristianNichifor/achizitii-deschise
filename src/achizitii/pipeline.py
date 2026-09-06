@@ -29,7 +29,11 @@ from .normalize import normalize_item
 
 log = logging.getLogger(__name__)
 
-PARSE_VERSION = 1
+# Bump whenever parsing or normalisation semantics change, so rows built by different
+# logic are distinguishable and only affected rows need reprocessing.
+#   1 — initial
+#   2 — UN/CEFACT unit codes; bundles detected from description as well as unit
+PARSE_VERSION = 2
 
 
 def daterange(start: date, end: date) -> Iterator[date]:
@@ -165,6 +169,7 @@ ITEM_SCHEMA = pa.schema(
         ("cantitate", pa.float64()),
         ("um_brut", pa.string()),
         ("um", pa.string()),
+        ("um_uncefact", pa.string()),
         ("dimensiune", pa.string()),
         ("marime_pachet", pa.int32()),
         ("pret_unitar_ron", pa.float64()),
@@ -229,6 +234,7 @@ def to_rows(
                     "cantitate": norm.quantity,
                     "um_brut": norm.unit_raw,
                     "um": norm.unit,
+                    "um_uncefact": norm.unit_uncefact,
                     "dimensiune": norm.dimension,
                     "marime_pachet": norm.pack_size,
                     "pret_unitar_ron": norm.unit_price_ron,
