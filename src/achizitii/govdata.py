@@ -38,7 +38,14 @@ from .normalize import fold
 log = logging.getLogger(__name__)
 
 CKAN = "https://data.gov.ro/api/3/action/package_show"
-DATASET = "achizitii-publice-{year}"
+
+# Candidate dataset slugs, tried in order. 2019 is published under a MISSPELLED slug
+# ("achiziti-publice-2019", one "i" short) on data.gov.ro itself, so a single template
+# silently loses that entire year. Verified 2026-09-06.
+DATASET_SLUGS = (
+    "achizitii-publice-{year}",
+    "achiziti-publice-{year}",
+)
 
 
 # --------------------------------------------------------------------------- tables
@@ -127,7 +134,16 @@ FARA_ANUNT = TableSpec(
 
 INITIERE = TableSpec(
     key="initiere",
-    match=re.compile(r"(?i)anun[tț]uri\s+de\s+ini[tț]iere"),
+    # The initiation notice has been published under several names:
+    #   2017-2018  "Anunturi participare"
+    #   2020-2021  "Anunțuri inițiere"            (no "de")
+    #   2022-2026  "Anunturi de initiere publicate", "... publicate in SEAP"
+    # Requiring "anunturi de initiere" silently lost this table for four years — and it
+    # is the one the estimate-versus-award comparison depends on.
+    #
+    # Anchored on "anunturi" so "Invitatii participare" (invitations to an existing
+    # dynamic purchasing system, a different record) does not match.
+    match=re.compile(r"(?i)\banun[tț]uri\s+(de\s+)?(ini[tț]iere|participare)\b"),
     columns={
         "autoritate": _c("autoritate contractanta"),
         "autoritate_cui": _c("cui autoritate contractanta"),
@@ -423,13 +439,23 @@ def discover(year: int, client: httpx.Client) -> list[Resource]:
     Resources whose name matches no known table (SAD invitations, award notifications)
     are skipped and logged rather than silently dropped.
     """
-    r = _get_with_retry(client, CKAN, params={"id": DATASET.format(year=year)})
-    if r.status_code == 404:
-        log.warning("no dataset for %d", year)
-        return []
-    r.raise_for_status()
-    payload = r.json()
-    if not payload.get("success"):
+    payload = None
+    for template in DATASET_SLUGS:
+        slug = template.format(year=year)
+        r = _get_with_retry(client, CKAN, params={"id": slug})
+        if r.status_code == 404:
+            continue
+        r.raise_for_status()
+        candidate = r.json()
+        if candidate.get("success"):
+            if template is not DATASET_SLUGS[0]:
+                log.info("%d: found under fallback slug %r", year, slug)
+            payload = candidate
+            break
+
+    if payload is None:
+        log.warning("no dataset for %d (tried %s)",
+                    year, [t.format(year=year) for t in DATASET_SLUGS])
         return []
 
     found: list[Resource] = []

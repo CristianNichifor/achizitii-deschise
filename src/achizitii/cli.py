@@ -59,6 +59,11 @@ def main(argv: list[str] | None = None) -> int:
         "--tables", nargs="*", default=None,
         help="subset of: achizitii_directe contracte fara_anunt initiere modificari",
     )
+    gov.add_argument(
+        "--check-coverage",
+        action="store_true",
+        help="report which tables each year matches, without downloading anything",
+    )
 
     # -- indicators ----------------------------------------------------------------
     ind = sub.add_parser("indicators", help="run risk indicators over ingested bulk data")
@@ -89,7 +94,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "gov":
-        from .govpipeline import ingest_years
+        from .govpipeline import check_coverage, ingest_years
+
+        if args.check_coverage:
+            coverage = check_coverage(args.years)
+            _emit(coverage)
+            return 0
 
         summary = ingest_years(args.years, args.tables)
         _emit(summary)
