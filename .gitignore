@@ -12,6 +12,9 @@ data/raw/
 data/staging/
 data/core/
 data/marts/
+data/gov_raw/
+data/gov/
+data/findings/
 site/data/
 *.parquet
 *.jsonl
