@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import zipfile
+from typing import ClassVar
 
 import pytest
 
@@ -12,8 +13,10 @@ from achizitii.govdata import (
     CONTRACTE,
     MODIFICARI,
     TABLES,
+    _header_key,
     _sniff_delimiter,
     map_columns,
+    missing_columns,
     read_table,
     sniff,
     to_records,
@@ -175,3 +178,85 @@ class TestReadTable:
         header, rows = read_table(blob)
         assert header == ["A", "B"]
         assert rows == [["1", "2"]]
+
+
+class TestHeaderNormalisation:
+    """The same column is spelled three ways across the exports."""
+
+    def test_separators_collapse_but_word_order_does_not(self) -> None:
+        """Normalisation removes separators; it cannot reorder words.
+
+        "CUI autoritate contractanta" and "AutoritateContractantaCUI" place CUI at
+        opposite ends, so they are genuinely different keys. That is why each canonical
+        field lists several alias spellings rather than relying on normalisation alone.
+        """
+        camel = _header_key("AutoritateContractantaCUI")
+        snake = _header_key("AUTORITATE_CONTRACTANTA_CUI")
+        spaced = _header_key("CUI autoritate contractanta")
+        assert camel == snake == "autoritatecontractantacui"
+        assert spaced == "cuiautoritatecontractanta"
+        assert spaced != camel
+
+    def test_both_orderings_are_declared_as_aliases(self) -> None:
+        """Both must therefore resolve — which is what the alias tuples guarantee."""
+        for header in ("CUI autoritate contractanta", "AUTORITATE_CONTRACTANTA_CUI"):
+            assert "autoritate_cui" in map_columns([header], ACHIZITII_DIRECTE), header
+
+    def test_snake_case_matches_camel_alias(self) -> None:
+        """Regression: underscores are word characters.
+
+        A fold that only stripped punctuation left `castigator_cui` unmatched against
+        the alias `castigatorcui`, so the 2021 export silently produced four columns of
+        NULLs across 1,043,345 rows.
+        """
+        assert _header_key("CASTIGATOR_CUI") == _header_key("CastigatorCUI")
+        assert _header_key("VALOARE_RON") == _header_key("ValoareRON")
+
+
+class TestSnakeCaseExport:
+    """The 2019-2021 exports use SNAKE_CASE headers."""
+
+    HEADER: ClassVar[list[str]] = [
+        "CASTIGATOR", "CASTIGATOR_CUI", "CASTIGATOR_TARA", "CASTIGATOR_LOCALITATE",
+        "CASTIGATOR_ADRESA", "TIP_PROCEDURA", "AUTORITATE_CONTRACTANTA",
+        "AUTORITATE_CONTRACTANTA_CUI", "NUMAR_ANUNT", "DATA_ANUNT", "DESCRIERE",
+        "TIP_INCHEIERE_CONTRACT", "NUMAR_CONTRACT", "DATA_CONTRACT", "TITLU_CONTRACT",
+        "VALOARE", "MONEDA", "VALOARE_RON", "VALOARE_EUR", "CPV_CODE_ID", "CPV_CODE",
+    ]
+
+    def test_key_columns_map(self) -> None:
+        m = map_columns(self.HEADER, ACHIZITII_DIRECTE)
+        assert m["autoritate_cui"] == 7
+        assert m["furnizor_cui"] == 1
+        assert m["cpv"] == 20
+
+    def test_prefers_valoare_ron_over_raw_valoare(self) -> None:
+        """VALOARE is the contract currency; VALOARE_RON is what we compare."""
+        m = map_columns(self.HEADER, ACHIZITII_DIRECTE)
+        assert self.HEADER[m["valoare_ron"]] == "VALOARE_RON"
+
+
+class TestMissingColumns:
+    def test_reports_absent_canonical_fields(self) -> None:
+        absent = missing_columns(["Autoritate contractanta"], ACHIZITII_DIRECTE)
+        assert "valoare_ron" in absent
+        assert "autoritate" not in absent
+
+    def test_nothing_absent_for_a_full_header(self) -> None:
+        header = [
+            "Autoritate contractanta", "CUI autoritate contractanta",
+            "Numar achizitie directa", "Data publicare", "Data finalizare",
+            "Denumire achizitie", "Cod CPV", "Denumire CPV", "Tip contract",
+            "Valoare achizitie (RON)", "Ofertant castigator", "CUI ofertant castigator",
+            "Castigator localitate", "Tip procedura",
+        ]
+        assert missing_columns(header, ACHIZITII_DIRECTE) == []
+
+
+class TestFrameworkColumns:
+    def test_contracte_maps_framework_indicators(self) -> None:
+        """Without these, contract values cannot be summed without double-counting."""
+        header = ["Tip incheiere contract", "Incheiat prin", "Valoare contract (RON)"]
+        m = map_columns(header, CONTRACTE)
+        assert m["tip_incheiere"] == 0
+        assert m["incheiat_prin"] == 1

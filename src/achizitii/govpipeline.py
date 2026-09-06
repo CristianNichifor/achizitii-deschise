@@ -98,6 +98,7 @@ def ingest_years(
     wanted = set(tables) if tables else set(govdata.TABLES_BY_KEY)
     summary: list[dict[str, Any]] = []
     unmapped_seen: dict[str, set[str]] = {}
+    missing_seen: dict[str, set[str]] = {}
 
     with govdata.make_client() as client:
         for year in years:
@@ -131,6 +132,7 @@ def ingest_years(
                     records, unmapped = govdata.to_records(
                         header, rows, res.table, res.name
                     )
+                    absent = govdata.missing_columns(header, res.table)
                     del rows
                     if not records:
                         log.warning("%s: no rows", res.name)
@@ -148,17 +150,24 @@ def ingest_years(
 
                 if unmapped:
                     unmapped_seen.setdefault(res.table.key, set()).update(unmapped)
+                if absent:
+                    # A canonical field with no source column becomes a column of NULLs,
+                    # not an error. Surface it or it hides, as it did for 2021.
+                    log.warning("%s: no source column for %s", res.name, absent)
+                    missing_seen.setdefault(res.table.key, set()).update(absent)
                 log.info("%s [%s] -> %s (%d rows)", res.name, fmt, path.name, n)
-                summary.append(
-                    {"year": year, "table": res.table.key, "resource": res.name,
-                     "format": fmt, "rows": n}
-                )
+                entry = {"year": year, "table": res.table.key, "resource": res.name,
+                         "format": fmt, "rows": n}
+                if absent:
+                    entry["columns_absent"] = absent
+                summary.append(entry)
 
     return {
         "ingest_version": INGEST_VERSION,
         "files": summary,
         "total_rows": sum(s.get("rows", 0) or 0 for s in summary),
         "unmapped_columns": {k: sorted(v) for k, v in unmapped_seen.items()},
+        "columns_absent": {k: sorted(v) for k, v in missing_seen.items()},
     }
 
 
