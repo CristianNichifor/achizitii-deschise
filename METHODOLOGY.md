@@ -80,17 +80,70 @@ For a benchmark over (CPV × unit × county × period):
 
 ## Risk indicators
 
-*Not yet implemented (Stage 3).* When added, the intent is:
+Implemented in `src/achizitii/indicators.py`, over the data.gov.ro bulk exports.
 
-- Adopt the published **Corruption Risk Index** methodology (Government Transparency
-  Institute) rather than inventing a proprietary score.
-- Compute deterministically wherever possible. Submission windows, single-bidder rates,
-  supplier concentration and award/estimate ratios are arithmetic, not inference, and
-  must not be delegated to a language model.
-- For technical specifications, the strongest Romanian indicator is deterministic: Legea
-  98/2016 requires that where a specification names a make or source, it be accompanied
-  by "sau echivalent". A brand gazetteer plus one regex is more precise and far more
-  defensible than a model's judgement.
+Every indicator declares four things, and will not run without them:
+
+- **`legal_basis`** — the provision the pattern relates to. A finding without one is not
+  defensible and should not be published.
+- **`rationale`** — what behaviour the rule is designed to surface.
+- **`applies_to`** — the scope. A rule never fires outside it.
+- **`valid_from` / `valid_to`** — thresholds and rules change over time. Applying the
+  2023 ceiling to 2018 data would manufacture findings, so a rule outside its validity
+  window is skipped, loudly, rather than run.
+
+| ID | Pattern | Legal basis |
+|---|---|---|
+| `prag-01` | Values clustering immediately below the direct-acquisition ceiling | art. 7 |
+| `fara-competitie-01` | Awards with no prior notice published | art. 104 |
+| `divizare-01` | Repeat purchases, same object and supplier, short window, cumulative value above the ceiling | art. 11 |
+| `dependenta-01` | One supplier taking a dominant share of an authority's budget | art. 2 |
+| `modificare-01` | Contract value increased after signature | art. 221 |
+
+All references are to Legea 98/2016.
+
+### Deterministic by design
+
+Every indicator is arithmetic over public fields. No language model is involved and none
+is needed. This is not a limitation — it is what makes a finding checkable by the
+authority it names, and what allows the exact query to be published alongside the result.
+
+### Thresholds are dated and verified
+
+The direct-acquisition ceiling is held as a dated schedule, not a constant. The
+2023-01-01 value (270,120 RON for goods/services) is confirmed empirically: in the Q1
+2026 export, direct acquisitions stop dead at that figure — 8 records above it across
+the whole 270,120–280,000 range, against 377 in the 1,120 RON immediately below, and
+236 priced at exactly 270,000.
+
+**Earlier ceilings are not yet verified against the legal text, so the rule does not run
+on those years.** A wrong threshold invents findings; refusing to run is the correct
+failure mode.
+
+### Interpretation limits
+
+Each indicator has innocent explanations, and the output must never imply otherwise:
+
+- Bunching below a ceiling can reflect a genuine internal budget limit.
+- Awards without a notice are lawful in the circumstances art. 104 sets out.
+- Repeat same-day purchases may be distinct lots of one real programme.
+- A 90% supplier share may mean one qualified firm in a small local market.
+- Contract increases are lawful within the limits of art. 221, and may reflect indexation.
+
+The correct reading of any finding is **"this warrants review"**, never "this is fraud".
+
+### Not yet implemented
+
+- **Single-bidder rate** — the strongest indicator in the literature. **Not computable
+  from the bulk exports**, which carry no bidder counts. It requires
+  `GetCANoticeContracts` from the API, per notice.
+- **Corruption Risk Index** composite scoring (Government Transparency Institute). The
+  intent remains to adopt a published methodology rather than invent a score, but the
+  missing bidder data blocks a faithful implementation today.
+- **Brand-without-"sau echivalent"** in technical specifications (art. 156). Deterministic
+  — a curated brand gazetteer plus one regex — but it needs the tender documents, which
+  are Stage 4.
+- **Ownership links** between suppliers and officials. Requires ONRC.
 
 ## Corrections
 

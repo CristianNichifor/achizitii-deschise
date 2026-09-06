@@ -67,19 +67,56 @@ Established empirically against the live API, not assumed:
 | `closingValue == Σ(itemClosingPrice × itemQuantity)` | 25/25 sampled records matched within 2% |
 | County comes from `Entity/getCAEntityView/{id}` | Returns `county`, `city`, `fiscalNumber` |
 
+## Two sources, two questions
+
+They are not interchangeable, and this is the central design fact:
+
+| Source | Carries | Answers |
+|---|---|---|
+| **SEAP `api-pub`** | quantity, unit, **unit price** | *Was the price reasonable?* |
+| **data.gov.ro bulk** | every acquisition and contract, **no quantities** | *Were the rules followed? Who benefits?* |
+
+Behavioural risk indicators need only the bulk export — four files per quarter, no
+per-record API calls.
+
 ## Quick start
 
 ```bash
 python -m venv .venv && .venv/bin/pip install -e ".[dev]"
 
-# smoke test: 25 acquisitions from one day
-.venv/bin/achizitii --start 2026-09-01 --limit 25 --skip-raw
+# --- line items and unit prices, from the live API ---
+.venv/bin/achizitii seap --start 2026-09-01 --limit 25 --skip-raw   # smoke test
+.venv/bin/achizitii seap --days-back 1                              # a full day
 
-# a full day (~2000 acquisitions, several minutes at the polite rate limit)
-.venv/bin/achizitii --start 2026-09-01
+# --- bulk exports and risk indicators ---
+.venv/bin/achizitii gov --years 2026            # one year
+.venv/bin/achizitii gov --years 2016-2026       # full backfill
+.venv/bin/achizitii indicators --list           # what each rule checks, and its legal basis
+.venv/bin/achizitii indicators                  # run them, write findings to data/findings/
 ```
 
 Then open `site/index.html` over a local HTTP server to query the Parquet with DuckDB-Wasm.
+
+## Risk indicators
+
+Five deterministic indicators over the bulk data. Each declares its **legal basis**, the
+scope it applies to, and the dates between which it is valid — because thresholds and
+rules change, and applying today's threshold to 2018 data manufactures findings.
+
+| ID | Checks | Legal basis |
+|---|---|---|
+| `prag-01` | Values clustering just under the direct-acquisition ceiling | Legea 98/2016 art. 7 |
+| `fara-competitie-01` | Awards with no prior notice published | Legea 98/2016 art. 104 |
+| `divizare-01` | Repeat buys, same object and supplier, short window | Legea 98/2016 art. 11 |
+| `dependenta-01` | One supplier taking most of an authority's budget | Legea 98/2016 art. 2 |
+| `modificare-01` | Contract value rising after signature | Legea 98/2016 art. 221 |
+
+No model is involved in any of them. That is deliberate: a finding computed by
+arithmetic over public fields can be checked by the authority it names.
+
+**These report patterns, never conclusions.** Every output means "requires review".
+Bunching at a threshold may be a real budget cap; a 91% supplier share may mean one
+qualified local firm. See `METHODOLOGY.md`.
 
 ## Data sources and licence
 

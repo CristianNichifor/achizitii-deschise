@@ -13,61 +13,110 @@ from zoneinfo import ZoneInfo
 # from UTC would select the wrong day for runs scheduled near midnight.
 RO_TZ = ZoneInfo("Europe/Bucharest")
 
-from .pipeline import run
-
 
 def _parse_date(value: str) -> date:
     return date.fromisoformat(value)
 
 
+def _years(value: str) -> list[int]:
+    """Accept '2024', '2016-2026' or '2019,2021'."""
+    out: list[int] = []
+    for part in value.split(","):
+        part = part.strip()
+        if "-" in part:
+            lo, hi = (int(x) for x in part.split("-", 1))
+            out.extend(range(lo, hi + 1))
+        elif part:
+            out.append(int(part))
+    return sorted(set(out))
+
+
+def _emit(payload: object) -> None:
+    json.dump(payload, sys.stdout, indent=2, ensure_ascii=False, default=str)
+    sys.stdout.write("\n")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="achizitii",
-        description="Ingest Romanian public procurement line items from SEAP.",
-    )
-    parser.add_argument("--start", type=_parse_date, help="start date YYYY-MM-DD")
-    parser.add_argument("--end", type=_parse_date, help="end date YYYY-MM-DD (inclusive)")
-    parser.add_argument(
-        "--days-back",
-        type=int,
-        default=None,
-        help="convenience: ingest the last N days ending yesterday",
-    )
-    parser.add_argument(
-        "--skip-raw",
-        action="store_true",
-        help="do not write the raw archive (useful for local experiments)",
-    )
-    parser.add_argument(
-        "--limit",
-        type=int,
-        default=None,
-        help="cap records fetched per day (smoke tests only — produces partial data)",
+        description="Romanian public procurement: line items, OCDS releases, risk indicators.",
     )
     parser.add_argument("-v", "--verbose", action="store_true")
-    args = parser.parse_args(argv)
+    sub = parser.add_subparsers(dest="command", required=True)
 
+    # -- seap: per-record line items from the live API ------------------------------
+    seap = sub.add_parser("seap", help="ingest line items from the SEAP api-pub endpoints")
+    seap.add_argument("--start", type=_parse_date)
+    seap.add_argument("--end", type=_parse_date)
+    seap.add_argument("--days-back", type=int)
+    seap.add_argument("--skip-raw", action="store_true")
+    seap.add_argument("--limit", type=int, help="cap records per day (smoke tests only)")
+
+    # -- gov: bulk quarterly exports -----------------------------------------------
+    gov = sub.add_parser("gov", help="ingest the data.gov.ro quarterly exports")
+    gov.add_argument("--years", type=_years, required=True, help="e.g. 2024 or 2016-2026")
+    gov.add_argument(
+        "--tables", nargs="*", default=None,
+        help="subset of: achizitii_directe contracte fara_anunt initiere modificari",
+    )
+
+    # -- indicators ----------------------------------------------------------------
+    ind = sub.add_parser("indicators", help="run risk indicators over ingested bulk data")
+    ind.add_argument("--only", nargs="*", default=None, help="indicator identifiers")
+    ind.add_argument("--on-date", type=_parse_date, default=None,
+                     help="evaluate rule validity as of this date")
+    ind.add_argument("--list", action="store_true", help="list indicators and exit")
+
+    args = parser.parse_args(argv)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
     )
 
-    if args.days_back is not None:
-        end = datetime.now(RO_TZ).date() - timedelta(days=1)
-        start = end - timedelta(days=args.days_back - 1)
-    elif args.start:
-        start = args.start
-        end = args.end or args.start
-    else:
-        parser.error("provide --start (and optionally --end) or --days-back")
+    if args.command == "seap":
+        from .pipeline import run
 
-    if start > end:
-        parser.error("--start must not be after --end")
+        if args.days_back is not None:
+            end = datetime.now(RO_TZ).date() - timedelta(days=1)
+            start = end - timedelta(days=args.days_back - 1)
+        elif args.start:
+            start, end = args.start, args.end or args.start
+        else:
+            seap.error("provide --start (and optionally --end) or --days-back")
+        if start > end:
+            seap.error("--start must not be after --end")
+        _emit(run(start, end, skip_raw=args.skip_raw, limit=args.limit))
+        return 0
 
-    summary = run(start, end, skip_raw=args.skip_raw, limit=args.limit)
-    json.dump(summary, sys.stdout, indent=2, ensure_ascii=False)
-    sys.stdout.write("\n")
-    return 0
+    if args.command == "gov":
+        from .govpipeline import ingest_years
+
+        _emit(ingest_years(args.years, args.tables))
+        return 0
+
+    if args.command == "indicators":
+        from .indicators import INDICATORS
+
+        if args.list:
+            _emit([
+                {
+                    "identifier": i.identifier,
+                    "name": i.name_ro,
+                    "legal_basis": i.legal_basis,
+                    "applies_to": list(i.applies_to),
+                    "valid_from": i.valid_from.isoformat(),
+                    "valid_to": i.valid_to.isoformat() if i.valid_to else None,
+                }
+                for i in INDICATORS
+            ])
+            return 0
+
+        from .govpipeline import run_indicators
+
+        _emit(run_indicators(only=args.only, on_date=args.on_date))
+        return 0
+
+    return 1
 
 
 if __name__ == "__main__":
