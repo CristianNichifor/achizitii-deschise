@@ -246,3 +246,22 @@ class TestEstimateIndicatorGuards:
         assert "raport_maxim" in ind.params
         assert ind.params["raport_maxim"] == 5.0
         assert "$raport_maxim" in ind.sql
+
+
+class TestCeilingReportSeparation:
+    """Detection and corroboration answer different questions."""
+
+    def test_detection_does_not_reference_a_declared_value(self) -> None:
+        """The cliff scan must locate the ceiling without assuming one."""
+        sql = detect_ceiling_sql()
+        assert "$prag" not in sql
+        assert "270120" not in sql.replace(",", "")
+
+    def test_corroboration_requires_a_declared_value(self) -> None:
+        """Corroboration tests a specific figure; that is what validates a legal value."""
+        assert "$prag" in corroborate_ceiling_sql()
+
+    def test_exceedance_tolerance_is_declared(self) -> None:
+        from achizitii.indicators import CORROBORATION_MAX_EXCEEDANCE_PCT
+
+        assert 0 < CORROBORATION_MAX_EXCEEDANCE_PCT < 5

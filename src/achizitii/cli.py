@@ -71,6 +71,13 @@ def main(argv: list[str] | None = None) -> int:
         help="cross-year sanity checks on ingested data (null rates, category coverage)",
     )
 
+    # -- ceilings ------------------------------------------------------------------
+    ceil = sub.add_parser(
+        "ceilings",
+        help="detect the direct-acquisition ceiling per year and corroborate the declared one",
+    )
+    ceil.add_argument("--years", type=_years, default=None)
+
     # -- indicators ----------------------------------------------------------------
     ind = sub.add_parser("indicators", help="run risk indicators over ingested bulk data")
     ind.add_argument("--only", nargs="*", default=None, help="indicator identifiers")
@@ -133,6 +140,12 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 1
+        return 0
+
+    if args.command == "ceilings":
+        from .govpipeline import ceilings_report
+
+        _emit(ceilings_report(args.years))
         return 0
 
     if args.command == "indicators":
