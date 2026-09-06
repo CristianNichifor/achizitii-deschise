@@ -22,6 +22,7 @@ from achizitii.govdata import (
     map_columns,
     missing_columns,
     read_table,
+    realign_header,
     sniff,
     to_records,
 )
@@ -425,3 +426,67 @@ class TestDeclaredDimensions:
         header, rows = read_table(self._xlsx("A1:C11", rows=10))
         assert len(header) == 3
         assert len(rows) == 10
+
+
+class TestPreambleAndMultiSheet:
+    """Two failure modes that both yield an empty table from a large file."""
+
+    def _xls_bytes(self, sheets: list[list[list[str]]]) -> bytes:
+        xlwt = pytest.importorskip("xlwt")
+        wb = xlwt.Workbook()
+        for i, rows in enumerate(sheets):
+            ws = wb.add_sheet(f"Sheet {i + 1}")
+            for r, row in enumerate(rows):
+                for c, val in enumerate(row):
+                    ws.write(r, c, val)
+        buf = io.BytesIO()
+        wb.save(buf)
+        return buf.getvalue()
+
+    def test_title_banner_is_skipped(self) -> None:
+        """The 2023 exports open with "Raport Achizitii directe Trimestrul I 2023".
+
+        Treating that as the header maps no columns, so every record becomes all-NULL
+        and is dropped — a 167 MB file parsed to zero rows.
+        """
+        header = ["Raport Achizitii directe Trimestrul I 2023", "", ""]
+        rows = [
+            ["Autoritate contractanta", "Cod CPV", "Valoare achizitie (RON)"],
+            ["PRIMARIA X", "30213100-6", "1234"],
+        ]
+        h2, r2 = realign_header(header, rows, ACHIZITII_DIRECTE)
+        assert h2[0] == "Autoritate contractanta"
+        assert len(r2) == 1
+        recs, _, _ = to_records(h2, r2, ACHIZITII_DIRECTE, "s")
+        assert recs[0]["autoritate"] == "PRIMARIA X"
+
+    def test_well_formed_header_is_left_alone(self) -> None:
+        header = ["Autoritate contractanta", "Cod CPV"]
+        rows = [["PRIMARIA X", "30213100-6"]]
+        h2, r2 = realign_header(header, rows, ACHIZITII_DIRECTE)
+        assert h2 == header
+        assert r2 == rows
+
+    def test_all_sheets_are_read_and_headers_deduplicated(self) -> None:
+        """.xls caps a SHEET at 65,536 rows, so large exports span many.
+
+        The 2023 Q1 file holds 584,138 rows across eleven sheets; reading only the
+        first discarded 519,137 of them.
+        """
+        head = ["Autoritate contractanta", "Cod CPV"]
+        blob = self._xls_bytes([
+            [head, ["PRIMARIA A", "30213100-6"], ["PRIMARIA B", "30213100-6"]],
+            [head, ["PRIMARIA C", "30213100-6"]],
+            [head, ["PRIMARIA D", "30213100-6"]],
+        ])
+        header, rows = read_table(blob)
+        assert header == head
+        assert len(rows) == 4, rows
+        assert [r[0] for r in rows] == ["PRIMARIA A", "PRIMARIA B", "PRIMARIA C", "PRIMARIA D"]
+
+    def test_single_sheet_unchanged(self) -> None:
+        head = ["Autoritate contractanta", "Cod CPV"]
+        blob = self._xls_bytes([[head, ["PRIMARIA A", "30213100-6"]]])
+        header, rows = read_table(blob)
+        assert header == head
+        assert len(rows) == 1

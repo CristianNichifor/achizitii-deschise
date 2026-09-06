@@ -135,6 +135,7 @@ def ingest_years(
                     blob = govdata.fetch(res, GOV_RAW, client)
                     fmt = govdata.sniff(blob)
                     header, rows = govdata.read_table(blob)
+                    header, rows = govdata.realign_header(header, rows, res.table)
                     records, unmapped, malformed = govdata.to_records(
                         header, rows, res.table, res.name
                     )
