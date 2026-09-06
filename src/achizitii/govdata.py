@@ -24,6 +24,7 @@ import csv
 import io
 import logging
 import re
+import time
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -385,13 +386,44 @@ class Resource:
         return f"{self.year}-{self.table.key}-{safe}"[:120]
 
 
+DISCOVER_RETRIES = 4
+
+
+def _get_with_retry(
+    client: httpx.Client, url: str, *, params: dict[str, Any] | None = None, **kw: Any
+) -> httpx.Response:
+    """GET with backoff on transient failures.
+
+    data.gov.ro intermittently refuses or stalls connections — a bare ConnectTimeout on
+    the very first discovery call killed a whole backfill in CI. Transport-level retries
+    do not cover read timeouts or 5xx, so both are retried here.
+    """
+    last: Exception | None = None
+    for attempt in range(DISCOVER_RETRIES):
+        try:
+            r = client.get(url, params=params, **kw)
+        except httpx.HTTPError as exc:
+            last = exc
+            log.warning("GET %s failed (%s), attempt %d", url, exc, attempt + 1)
+        else:
+            if r.status_code < 500:
+                return r
+            last = httpx.HTTPStatusError(
+                f"HTTP {r.status_code}", request=r.request, response=r
+            )
+            log.warning("GET %s -> %d, attempt %d", url, r.status_code, attempt + 1)
+        time.sleep(2**attempt)
+    assert last is not None
+    raise last
+
+
 def discover(year: int, client: httpx.Client) -> list[Resource]:
     """Resources for one year, classified by logical table.
 
     Resources whose name matches no known table (SAD invitations, award notifications)
     are skipped and logged rather than silently dropped.
     """
-    r = client.get(CKAN, params={"id": DATASET.format(year=year)})
+    r = _get_with_retry(client, CKAN, params={"id": DATASET.format(year=year)})
     if r.status_code == 404:
         log.warning("no dataset for %d", year)
         return []
@@ -426,7 +458,7 @@ def fetch(resource: Resource, cache_dir: Path, client: httpx.Client) -> bytes:
     if path.exists() and path.stat().st_size > 0:
         return path.read_bytes()
     log.info("downloading %s", resource.name)
-    r = client.get(resource.url, follow_redirects=True, timeout=300.0)
+    r = _get_with_retry(client, resource.url, follow_redirects=True, timeout=600.0)
     r.raise_for_status()
     path.write_bytes(r.content)
     return r.content
@@ -435,6 +467,9 @@ def fetch(resource: Resource, cache_dir: Path, client: httpx.Client) -> bytes:
 def make_client() -> httpx.Client:
     return httpx.Client(
         headers={"User-Agent": f"achizitii-deschise/0.1 (+{CONTACT})"},
-        timeout=120.0,
+        # Connect generously: data.gov.ro is slow to accept connections from cloud
+        # runners. Read timeout is large because single exports exceed 100 MB.
+        timeout=httpx.Timeout(connect=60.0, read=600.0, write=60.0, pool=60.0),
+        transport=httpx.HTTPTransport(retries=3),
         follow_redirects=True,
     )
