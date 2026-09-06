@@ -24,6 +24,45 @@ FINDINGS = DATA / "findings"
 INGEST_VERSION = 1
 
 
+def check_coverage(years: list[int]) -> dict[str, Any]:
+    """Report, per year, which tables were matched and what went unclassified.
+
+    Resource names drift constantly ("Anunturi participare" in 2017, "Anunțuri
+    inițiere" in 2020, "Anunturi de initiere publicate" in 2023). A regex that stops
+    matching does not raise — the table just quietly vanishes for those years, which is
+    how `initiere` was lost for four of them. This makes the gap visible without
+    downloading anything.
+    """
+    report: list[dict[str, Any]] = []
+    missing_any: set[str] = set()
+
+    with govdata.make_client() as client:
+        for year in years:
+            try:
+                found = govdata.discover(year, client)
+            except Exception as exc:  # noqa: BLE001
+                report.append({"year": year, "error": str(exc)[:200]})
+                continue
+
+            by_table: dict[str, int] = {}
+            for r in found:
+                by_table[r.table.key] = by_table.get(r.table.key, 0) + 1
+            absent = sorted(set(govdata.TABLES_BY_KEY) - set(by_table))
+            missing_any.update(absent)
+            report.append(
+                {
+                    "year": year,
+                    "matched": dict(sorted(by_table.items())),
+                    "tables_absent": absent,
+                }
+            )
+
+    return {
+        "years": report,
+        "tables_absent_somewhere": sorted(missing_any),
+    }
+
+
 def _write_resource(
     records: list[dict[str, Any]], res: govdata.Resource
 ) -> Path:
