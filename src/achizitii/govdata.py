@@ -76,7 +76,9 @@ ACHIZITII_DIRECTE = TableSpec(
         "data_finalizare": _c("data finalizare", "datacontract", "data contract"),
         "denumire": _c("denumire achizitie", "descriere", "titlucontract"),
         "cpv": _c("cod cpv", "cpvcode"),
-        "cpv_denumire": _c("denumire cpv", "cpvcodeid"),
+        # NOT "cpvcodeid": that column holds a numeric internal id (39831240 -> 15113),
+        # not a label. Mapping it here filled the field with meaningless integers.
+        "cpv_denumire": _c("denumire cpv", "cpvcodename", "denumire cod cpv"),
         "tip_contract": _c("tip contract", "tipincheierecontract"),
         "valoare_ron": _c("valoare achizitie ron", "valoareron", "valoare"),
         "furnizor": _c("ofertant castigator", "castigator"),
