@@ -1,0 +1,21 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.pytest_cache/
+.ruff_cache/
+
+# Data artefacts — never commit bulk data to git.
+# Raw responses go to object storage; built Parquet is published as a release.
+data/raw/
+data/staging/
+data/core/
+data/marts/
+site/data/
+*.parquet
+*.jsonl
+*.jsonl.gz
+
+# State IS committed (it is small and is the resume ledger)
+!state/

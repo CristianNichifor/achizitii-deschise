@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>achizitii-deschise — prețuri unitare în achizițiile publice</title>
+<style>
+  :root {
+    --ink: #101418; --muted: #5c6672; --paper: #fff; --sub: #f4f6f8;
+    --line: #dfe4e9; --accent: #1a56b8; --warn: #b45309;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --ink:#e8ecf1; --muted:#95a1af; --paper:#0e1216; --sub:#161c23;
+            --line:#252d36; --accent:#6ea8fe; --warn:#f0b429; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:2rem 1.25rem 4rem; background:var(--paper); color:var(--ink);
+         font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  main { max-width: 1080px; margin: 0 auto; }
+  h1 { font-size:1.6rem; margin:0 0 .3rem; letter-spacing:-.02em; }
+  .sub { color:var(--muted); margin:0 0 1.5rem; }
+  .banner { background:var(--sub); border-left:3px solid var(--warn); padding:.7rem .9rem;
+            border-radius:0 6px 6px 0; margin-bottom:1.5rem; font-size:.9rem; }
+  .controls { display:flex; gap:.6rem; flex-wrap:wrap; align-items:flex-end; margin-bottom:1rem; }
+  label { display:block; font-size:.75rem; text-transform:uppercase; letter-spacing:.04em;
+          color:var(--muted); margin-bottom:.25rem; }
+  select, input, button { font:inherit; padding:.45rem .6rem; border:1px solid var(--line);
+          border-radius:6px; background:var(--paper); color:var(--ink); }
+  button { background:var(--accent); color:#fff; border-color:transparent; cursor:pointer; font-weight:500; }
+  button:disabled { opacity:.5; cursor:progress; }
+  #status { color:var(--muted); font-size:.85rem; margin:.75rem 0; }
+  .wrap { overflow-x:auto; border:1px solid var(--line); border-radius:8px; }
+  table { border-collapse:collapse; width:100%; font-size:.87rem; }
+  th, td { padding:.45rem .7rem; text-align:left; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th { background:var(--sub); font-weight:600; font-size:.72rem; text-transform:uppercase;
+       letter-spacing:.04em; color:var(--muted); position:sticky; top:0; }
+  td.num { text-align:right; font-family:var(--mono); font-variant-numeric:tabular-nums; }
+  tbody tr:last-child td { border-bottom:none; }
+  details { margin-top:1.5rem; }
+  summary { cursor:pointer; color:var(--muted); font-size:.85rem; }
+  pre { background:var(--sub); padding:.9rem; border-radius:8px; overflow-x:auto;
+        font-family:var(--mono); font-size:.8rem; }
+  footer { margin-top:2.5rem; padding-top:1rem; border-top:1px solid var(--line);
+           color:var(--muted); font-size:.8rem; }
+  a { color:var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Prețuri unitare în achizițiile publice</h1>
+  <p class="sub">Ce a plătit fiecare autoritate pentru <em>o singură bucată</em>. Datele se
+     interoghează direct în browser, cu DuckDB-Wasm peste fișiere Parquet.</p>
+
+  <div class="banner">
+    <strong>Stadiu incipient.</strong> Doar achiziții directe. Prețurile sunt nominale
+    (fără ajustare la inflație), iar liniile marcate necomparabile sunt excluse din
+    statistici. Vezi <a href="https://github.com/CristianNichifor/achizitii-deschise/blob/main/METHODOLOGY.md">METHODOLOGY.md</a>.
+  </div>
+
+  <div class="controls">
+    <div>
+      <label for="cpv">Cod CPV (obligatoriu)</label>
+      <select id="cpv">
+        <option value="">— toate (comparație nevalidă) —</option>
+      </select>
+    </div>
+    <div>
+      <label for="q">Caută în denumire</label>
+      <input id="q" placeholder="laptop, toner, ..." size="20">
+    </div>
+    <div>
+      <label for="minn">n minim</label>
+      <input id="minn" type="number" value="1" min="1" size="4">
+    </div>
+    <button id="run" disabled>Rulează</button>
+  </div>
+
+  <p id="status">Se încarcă DuckDB-Wasm…</p>
+  <div class="wrap"><table id="out"><thead></thead><tbody></tbody></table></div>
+
+  <details>
+    <summary>Interogarea SQL folosită</summary>
+    <pre id="sql"></pre>
+  </details>
+
+  <footer>
+    Date: SEAP / e-licitatie.ro (Licența pentru Guvernare Deschisă v1.0) ·
+    Publicate sub <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a> ·
+    <a href="https://github.com/CristianNichifor/achizitii-deschise">Cod sursă</a>
+  </footer>
+</main>
+
+<script type="module">
+import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0/+esm';
+
+const $ = (id) => document.getElementById(id);
+const status = (m) => { $('status').textContent = m; };
+const DATA = new URL('data/items/**/*.parquet', location.href).href;
+
+// Median unit price per county, with dispersion and position vs the national median.
+// A plain average would be misleading: procurement prices are heavily right-skewed.
+const SQL = `
+WITH baza AS (
+  SELECT judet, cpv, denumire, pret_unitar_ron
+  FROM read_parquet('${DATA}', hive_partitioning = true)
+  WHERE comparabil                      -- excludes bundles + unknown units
+    AND um = 'buc'                      -- never mix units in one comparison
+    AND pret_unitar_ron > 0
+    {{FILTERS}}
+),
+limite AS (
+  SELECT quantile_cont(pret_unitar_ron, 0.01) lo,
+         quantile_cont(pret_unitar_ron, 0.99) hi
+  FROM baza
+),
+taiat AS (
+  SELECT b.* FROM baza b, limite l
+  WHERE b.pret_unitar_ron BETWEEN l.lo AND l.hi
+),
+pe_judet AS (
+  SELECT judet,
+         count(*)                                        AS n,
+         median(pret_unitar_ron)                          AS median_ron,
+         quantile_cont(pret_unitar_ron, 0.9)
+           / nullif(quantile_cont(pret_unitar_ron, 0.1), 0) AS disp_p90_p10
+  FROM taiat
+  WHERE judet IS NOT NULL
+  GROUP BY judet
+  HAVING count(*) >= {{MINN}}
+)
+SELECT judet, n,
+       round(median_ron, 2)  AS median_ron,
+       round(disp_p90_p10, 2) AS disp_p90_p10,
+       round(median_ron / nullif((SELECT median(median_ron) FROM pe_judet), 0), 2)
+         AS vs_mediana_nationala
+FROM pe_judet
+ORDER BY vs_mediana_nationala DESC NULLS LAST
+LIMIT 100;`;
+
+function render(table) {
+  const head = $('out').tHead, body = $('out').tBodies[0];
+  head.innerHTML = ''; body.innerHTML = '';
+  if (!table.numRows) { status('Niciun rezultat. Relaxează filtrele sau scade n minim.'); return; }
+  const cols = table.schema.fields.map(f => f.name);
+  head.insertRow().append(...cols.map(c => {
+    const th = document.createElement('th'); th.textContent = c; return th;
+  }));
+  for (const row of table.toArray()) {
+    const tr = body.insertRow();
+    for (const c of cols) {
+      const td = tr.insertCell();
+      const v = row[c];
+      td.textContent = v === null || v === undefined ? '—' : v;
+      if (typeof v === 'number' || typeof v === 'bigint') td.className = 'num';
+    }
+  }
+  status(`${table.numRows} rânduri.`);
+}
+
+let conn;
+(async () => {
+  try {
+    const bundle = await duckdb.selectBundle(duckdb.getJsDelivrBundles());
+    const worker = await duckdb.createWorker(bundle.mainWorker);
+    const db = new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger(duckdb.LogLevel.WARNING), worker);
+    await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+    conn = await db.connect();
+    // Range requests let DuckDB read only the row groups it needs.
+    await conn.query(`SET enable_http_metadata_cache = true; SET http_keep_alive = true;`);
+
+    const cpvs = await conn.query(`
+      SELECT cpv, count(*) n FROM read_parquet('${DATA}', hive_partitioning = true)
+      WHERE cpv IS NOT NULL AND comparabil GROUP BY cpv ORDER BY n DESC LIMIT 300`);
+    const rows = cpvs.toArray();
+    for (const r of rows) {
+      const o = document.createElement('option');
+      o.value = r.cpv; o.textContent = `${r.cpv} (${r.n})`;
+      $('cpv').append(o);
+    }
+    // Default to the best-covered CPV. Never default to "all": comparing the median
+    // price of every 'buc' item across counties measures product mix, not price.
+    if (rows.length) $('cpv').value = rows[0].cpv;
+    $('run').disabled = false;
+    status('Gata.');
+    run();
+  } catch (err) {
+    status(`Eroare la inițializare: ${err.message}. Servește folderul prin HTTP (nu file://).`);
+    console.error(err);
+  }
+})();
+
+async function run() {
+  $('run').disabled = true;
+  status('Se interoghează…');
+  const filters = [];
+  if ($('cpv').value) filters.push(`AND cpv = '${$('cpv').value.replace(/'/g, "''")}'`);
+  if ($('q').value.trim())
+    filters.push(`AND denumire ILIKE '%${$('q').value.trim().replace(/'/g, "''")}%'`);
+  const minn = Math.max(1, parseInt($('minn').value, 10) || 1);
+  const sql = SQL.replace('{{FILTERS}}', filters.join('\n    ')).replace('{{MINN}}', minn);
+  $('sql').textContent = sql.trim();
+  try {
+    render(await conn.query(sql));
+    if (!$('cpv').value && !$('q').value.trim()) {
+      status($('status').textContent + ' ⚠ Fără filtru de CPV aceste mediane compară ' +
+             'produse diferite între ele — măsoară structura achizițiilor, nu prețul. ' +
+             'Alege un cod CPV.');
+    }
+  } catch (err) {
+    status(`Eroare: ${err.message}`);
+    console.error(err);
+  } finally {
+    $('run').disabled = false;
+  }
+}
+
+$('run').addEventListener('click', run);
+$('q').addEventListener('keydown', (e) => { if (e.key === 'Enter') run(); });
+</script>
+</body>
+</html>
