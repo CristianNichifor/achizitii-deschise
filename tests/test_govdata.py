@@ -16,6 +16,8 @@ from achizitii.govdata import (
     KNOWN_COLUMN_GAPS,
     MODIFICARI,
     TABLES,
+    Resource,
+    _dedupe_periods,
     _header_key,
     _sniff_delimiter,
     is_known_gap,
@@ -490,3 +492,73 @@ class TestPreambleAndMultiSheet:
         header, rows = read_table(blob)
         assert header == head
         assert len(rows) == 1
+
+
+class TestPeriodParsing:
+    def _res(self, name: str, url: str = "http://x/f.xlsx") -> Resource:
+        return Resource(2023, ACHIZITII_DIRECTE, name, url)
+
+    @pytest.mark.parametrize(
+        ("name", "period"),
+        [
+            ("Achizitii directe T 1 - 2023", "T1"),
+            ("Achizitii directe TII 2023", "T2"),
+            ("Achizitii Directe T III 2023", "T3"),
+            ("Achizitii Directe T IV 2023.csv", "T4"),
+            ("Achiziții directe 2020 - T3", "T3"),
+            ("Achizitii directe TI 2026", "T1"),
+            ("Contracte-2016-S1.csv", "S1"),
+            ("Contracte-2016-S2.csv", "S2"),
+        ],
+    )
+    def test_period_extracted(self, name: str, period: str) -> None:
+        assert self._res(name).period == period
+
+    def test_unparseable_period(self) -> None:
+        assert self._res("Achizitii directe 2023").period == "?"
+
+    def test_roman_four_not_read_as_one(self) -> None:
+        """IV must be matched before I in the alternation."""
+        assert self._res("Achizitii Directe T IV 2023").period == "T4"
+
+
+class TestDuplicateResources:
+    """Every quarter of 2023 and 2024 is published twice.
+
+    Ingesting both doubles every row for that quarter — for a project about public
+    money, silent inflation of spending is the worst possible failure.
+    """
+
+    def _res(self, name: str, url: str) -> Resource:
+        return Resource(2023, ACHIZITII_DIRECTE, name, url)
+
+    def test_csv_preferred_over_xls(self) -> None:
+        """.xls caps a sheet at 65,536 rows and its exports carry title banners;
+        CSV has neither problem."""
+        csv = self._res("Achizitii Directe T IV 2023.csv", "http://x/a.csv")
+        xls = self._res("Achizitii Directe T IV 2023.xls", "http://x/a.xls")
+        kept = _dedupe_periods([xls, csv], 2023)
+        assert len(kept) == 1
+        assert kept[0].url.endswith(".csv")
+
+    def test_identical_names_collapse_to_one(self) -> None:
+        a = self._res("Achizitii Directe T III 2023", "http://x/a.xls")
+        b = self._res("Achizitii Directe T III 2023", "http://x/b.xls")
+        assert len(_dedupe_periods([a, b], 2023)) == 1
+
+    def test_different_quarters_both_kept(self) -> None:
+        q3 = self._res("Achizitii Directe T III 2023", "http://x/a.csv")
+        q4 = self._res("Achizitii Directe T IV 2023", "http://x/b.csv")
+        assert len(_dedupe_periods([q3, q4], 2023)) == 2
+
+    def test_unparseable_period_is_never_dropped(self) -> None:
+        """Guessing would risk discarding a whole quarter."""
+        known = self._res("Achizitii Directe T III 2023", "http://x/a.csv")
+        unknown = self._res("Achizitii directe 2023", "http://x/b.csv")
+        kept = _dedupe_periods([known, unknown], 2023)
+        assert len(kept) == 2
+
+    def test_format_rank_from_url_not_declared_format(self) -> None:
+        """data.gov.ro declares .xlsx for files that are actually OpenDocument."""
+        assert self._res("x", "http://x/a.csv").format_rank == 0
+        assert self._res("x", "http://x/a.xls").format_rank == 3

@@ -598,12 +598,44 @@ def to_records(
 
 # ----------------------------------------------------------------------- discovery
 
+# The same quarter is frequently published more than once — as a .csv and a .xls of
+# identical data, or as two resources with the same name. Ingesting both would double
+# every row for that quarter, which for a project about public money is the worst kind
+# of error: silent inflation of spending.
+#
+# Formats are ranked by how reliably they have parsed in practice. CSV has no sheet
+# limits and no declared-dimension to lie about; XLS is last because it caps a sheet at
+# 65,536 rows, forcing multi-sheet handling, and its exports carry title banners.
+_FORMAT_RANK = {"csv": 0, "xlsx": 1, "ods": 2, "xls": 3}
+_QUARTER = re.compile(r"(?i)\bT\s*\.?\s*(IV|III|II|I|[1-4])\b")
+_SEMESTER = re.compile(r"(?i)\bS\s*\.?\s*([12])\b")
+_ROMAN = {"I": 1, "II": 2, "III": 3, "IV": 4}
+
+
 @dataclass(frozen=True)
 class Resource:
     year: int
     table: TableSpec
     name: str
     url: str
+
+    @property
+    def period(self) -> str:
+        """Quarter or semester this resource covers, for de-duplication."""
+        if m := _QUARTER.search(self.name):
+            token = m.group(1).upper()
+            return f"T{_ROMAN.get(token, token)}"
+        if m := _SEMESTER.search(self.name):
+            return f"S{m.group(1)}"
+        return "?"
+
+    @property
+    def format_rank(self) -> int:
+        """Lower is preferred. Derived from the URL, since declared formats lie."""
+        suffix = self.url.rsplit(".", 1)[-1].lower()
+        if suffix not in _FORMAT_RANK:
+            suffix = self.name.rsplit(".", 1)[-1].lower()
+        return _FORMAT_RANK.get(suffix, 9)
 
     @property
     def slug(self) -> str:
@@ -683,7 +715,33 @@ def discover(year: int, client: httpx.Client) -> list[Resource]:
     if skipped:
         log.info("%d: skipped %d unclassified resources, e.g. %s",
                  year, len(skipped), skipped[:2])
-    return found
+    return _dedupe_periods(found, year)
+
+
+def _dedupe_periods(found: list[Resource], year: int) -> list[Resource]:
+    """Keep one resource per (table, period), preferring the more reliable format."""
+    best: dict[tuple[str, str], Resource] = {}
+    dropped: list[str] = []
+    for res in found:
+        key = (res.table.key, res.period)
+        current = best.get(key)
+        if current is None:
+            best[key] = res
+        elif res.format_rank < current.format_rank:
+            best[key] = res
+            dropped.append(current.name)
+        else:
+            dropped.append(res.name)
+    if dropped:
+        log.info("%d: dropped %d duplicate resources, e.g. %s",
+                 year, len(dropped), dropped[:2])
+    # A resource whose period cannot be parsed is never de-duplicated away: guessing
+    # would risk discarding a quarter entirely.
+    unknown = [r for r in found if r.period == "?"]
+    return sorted(
+        {id(r): r for r in [*best.values(), *unknown]}.values(),
+        key=lambda r: (r.table.key, r.period, r.name),
+    )
 
 
 def fetch(resource: Resource, cache_dir: Path, client: httpx.Client) -> bytes:
