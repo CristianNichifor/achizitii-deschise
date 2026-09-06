@@ -84,6 +84,45 @@ Formats drift between years (CSV, XLS, XLSX, and some `.ods` files labelled `.xl
 the ingest must sniff rather than trust the declared format. This is the Stage 1 backfill
 path and the only source for contract amendments.
 
+### Dataset slugs drift too — including a typo
+
+**2019 is published under a misspelled slug: `achiziti-publice-2019`**, one `i` short of
+every other year. A single `achizitii-publice-{year}` template silently loses the entire
+year — no error, just an absent year. `DATASET_SLUGS` therefore tries fallbacks.
+
+### Resource names drift constantly
+
+The initiation-notice table alone has been published as:
+
+| Years | Name |
+|---|---|
+| 2016–2019 | `Anunturi participare`, `Anunturi initiere` |
+| 2020–2021 | `Anunțuri inițiere` (no "de") |
+| 2022–2026 | `Anunturi de initiere publicate`, `... publicate in SEAP` |
+
+Matching only `anunturi de initiere` lost this table for four years — and it is the one
+the estimate-versus-award comparison needs. A regex that stops matching does not raise;
+the table just disappears.
+
+Run `achizitii gov --years 2016-2026 --check-coverage` to see what each year matches,
+without downloading anything. Verified coverage as of 2026-09-06:
+
+| Table | Available |
+|---|---|
+| `achizitii_directe` | 2016–2026 |
+| `contracte` | 2016–2026 |
+| `initiere` | 2016–2026 |
+| `fara_anunt` | **2023–2026 only** — the report type was introduced then |
+| `modificari` | **2021–2026 only** — likewise |
+
+The last two are genuine absences, not matching failures. Indicators depending on them
+are therefore limited to those windows.
+
+Deliberately unclassified: `Contracte subsecvente` (framework call-offs),
+`Invitatii participare` / `Invitatii de depunere SAD` (invitations to an existing dynamic
+purchasing system), and `Notificari de atribuire la cumpararea directa` (the award side
+of direct purchases — a candidate future table).
+
 ## 3. OpenTender — reference only, NOT ingested
 
 `https://opentender.eu/ro`, published by the Government Transparency Institute; the only
