@@ -1,0 +1,72 @@
+name: "Corectare date / Data correction"
+description: "O înregistrare conține date greșite (valoare, furnizor, CPV, dată etc.)"
+title: "[corectare] "
+labels: ["corectare", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Mulțumim că semnalați o eroare. Corectăm greșelile de procesare oricât de mici.
+
+        Dacă sunteți autoritate contractantă sau ofertant și contestați o **interpretare**
+        (nu o dată greșită), folosiți formularul **Drept la replică**.
+
+        Nu introduceți date cu caracter personal (nume, e-mail, telefon ale persoanelor
+        de contact). Nu le publicăm și le vom elimina.
+
+  - type: input
+    id: ocid
+    attributes:
+      label: "Identificator înregistrare (ocid) sau număr achiziție"
+      description: "Ex: ocds-x0xx00-da-122898410, sau DA41081708. Găsiți identificatorul în tabelul publicat."
+      placeholder: "ocds-... / DA... / numărul contractului"
+    validations:
+      required: true
+
+  - type: input
+    id: url
+    attributes:
+      label: "Unde ați văzut cifra greșită?"
+      description: "Link către pagina, graficul sau fișierul publicat."
+    validations:
+      required: false
+
+  - type: textarea
+    id: gresit
+    attributes:
+      label: "Ce este greșit"
+      description: "Ce arată datele noastre acum."
+      placeholder: "Valoarea afișată este 1.183.034.477 RON."
+    validations:
+      required: true
+
+  - type: textarea
+    id: corect
+    attributes:
+      label: "Care este valoarea corectă"
+      description: "Ce ar trebui să arate."
+    validations:
+      required: true
+
+  - type: textarea
+    id: dovada
+    attributes:
+      label: "Sursa / dovada"
+      description: >
+        Link către anunțul din SEAP, fișierul de pe data.gov.ro, sau documentul oficial.
+        Verificăm întotdeauna față de sursa oficială, deci un link ne ajută să răspundem
+        mai repede.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: calitate
+    attributes:
+      label: "În ce calitate semnalați?"
+      options:
+        - "Cetățean / jurnalist / cercetător"
+        - "Autoritate contractantă vizată"
+        - "Operator economic vizat"
+        - "Altă calitate"
+    validations:
+      required: true

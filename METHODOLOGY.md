@@ -185,9 +185,14 @@ two and 25,386 with three.
 
 ## Corrections
 
-Errors are expected. If a record here misrepresents a real purchase, open an issue using
-the correction template. Corrections are applied to the pipeline (so they persist through
-rebuilds), logged in `CHANGELOG.md`, and the affected release is re-tagged.
+Errors are expected. The process is documented in full in
+[`CORRECTIONS.md`](CORRECTIONS.md), in Romanian and English, with three issue templates:
+a data correction, a right of reply for named entities, and a data-quality report for
+systematic problems.
+
+Corrections are applied **to the pipeline**, not to the published file, so they survive
+regeneration. They are logged in `CHANGELOG.md` and the affected release is re-tagged.
+Initial response within 5 working days, resolution within 30.
 
 Contracting authorities and suppliers have a standing right of reply. A contested record
 is annotated with the response; we do not remove accurate public data, and we do not
