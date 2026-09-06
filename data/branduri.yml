@@ -1,0 +1,168 @@
+# Commercial brand gazetteer.
+#
+# Serves two purposes at once:
+#
+# 1. PRODUCT GROUPING. A CPV code is far too coarse to compare prices within.
+#    30213100 ("computere portabile") covers both a budget netbook and a mobile
+#    workstation, and the data contains "Laptop", "laptop", "LAPTOP", "Laptop Dell
+#    Inspiron 3567 cu procesor Intel Core i5..." all under that one code. Averaging
+#    them produces a number that describes nothing. The brand is the strongest
+#    available signal for splitting a CPV into comparable groups.
+#
+# 2. THE ART. 156 INDICATOR. Legea 98/2016 requires that where a technical
+#    specification names a make or source, it be accompanied by "sau echivalent".
+#    Detecting a brand WITHOUT that phrase is a deterministic, auditable check —
+#    far more defensible than asking a language model whether a spec looks restrictive.
+#
+# Matching is on folded text (lowercase, diacritics stripped, punctuation removed) and
+# requires a word boundary, so "hp" does not match inside "shpe" and "dell" does not
+# match inside "adelle".
+#
+# Entries are lowercase. Multi-word brands are matched as phrases.
+
+brands:
+  # --- IT hardware ---
+  - dell
+  - hp
+  - hewlett packard
+  - lenovo
+  - asus
+  - acer
+  - apple
+  - macbook
+  - toshiba
+  - fujitsu
+  - samsung
+  - lg
+  - philips
+  - sony
+  - canon
+  - epson
+  - brother
+  - xerox
+  - kyocera
+  - konica minolta
+  - ricoh
+  - oki
+  - zebra
+  - intel
+  - amd
+  - nvidia
+  - microsoft
+  - logitech
+  - kingston
+  - seagate
+  - western digital
+  - transcend
+  - apc
+  - eaton
+  - cisco
+  - ubiquiti
+  - mikrotik
+  - tp link
+  - d link
+  - huawei
+  - honor
+  - xiaomi
+  - motorola
+  - nokia
+
+  # --- tools, industrial, automotive ---
+  - bosch
+  - makita
+  - dewalt
+  - stihl
+  - husqvarna
+  - honda
+  - yamaha
+  - siemens
+  - schneider
+  - abb
+  - legrand
+  - hager
+  - danfoss
+  - grundfos
+  - wilo
+  - viessmann
+  - vaillant
+  - ariston
+  - buderus
+  - daikin
+  - mitsubishi
+  - toyota
+  - volkswagen
+  - dacia
+  - renault
+  - ford
+  - skoda
+  - opel
+  - iveco
+  - man
+  - scania
+  - jcb
+  - caterpillar
+  - komatsu
+  - xcmg
+
+  # --- medical / laboratory ---
+  - olympus
+  - draeger
+  - medtronic
+  - roche
+  - siemens healthineers
+  - ge healthcare
+  - mindray
+  - fresenius
+  - bbraun
+  - b braun
+  - braun
+  - johnson
+  - abbott
+  - biomerieux
+  - thermo fisher
+  - beckman coulter
+  - stimuplex
+
+  # --- consumables / office / other ---
+  - dymo
+  - faber castell
+  - stabilo
+  - staedtler
+  - pelikan
+  - herlitz
+  - esselte
+  - leitz
+  - durable
+  - tesa
+  - henkel
+  - unilever
+  - procter gamble
+  - nestle
+  - coca cola
+  - pepsi
+  - dorna
+  - borsec
+  - certeze
+  - bucovina
+
+# Words that look like brands but are not: standards bodies, certifications and
+# materials. Matching these as brands would produce false art. 156 findings on
+# specifications that are entirely lawful.
+not_brands:
+  - iso
+  - en
+  - sr
+  - astm
+  - din
+  - ce
+  - ral
+  - ip
+  - usb
+  - hdmi
+  - led
+  - lcd
+  - pvc
+  - pet
+  - inox
+  - a4
+  - a3
