@@ -344,6 +344,12 @@ def _rows_xlsx(blob: bytes) -> tuple[list[str], list[list[str]]]:
 
     wb = openpyxl.load_workbook(io.BytesIO(blob), read_only=True, data_only=True)
     ws = wb.active
+    # Read-only mode trusts the sheet's declared dimension, and several exports declare
+    # a false one: the 2019-2020 direct-acquisition files claim max_row=1, max_col=1
+    # despite holding 500,000+ rows across 21 columns. Trusting that silently yields an
+    # empty table from a 134 MB file. reset_dimensions() makes openpyxl derive the real
+    # extent from the data while still streaming.
+    ws.reset_dimensions()
     it = ws.iter_rows(values_only=True)
     try:
         header = ["" if h is None else str(h) for h in next(it)]

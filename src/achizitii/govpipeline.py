@@ -24,6 +24,9 @@ FINDINGS = DATA / "findings"
 
 INGEST_VERSION = 1
 
+EMPTY_PARSE_ALARM_BYTES = 100_000
+"""Above this size, a file that parses to zero rows is treated as an error."""
+
 
 def check_coverage(years: list[int]) -> dict[str, Any]:
     """Report, per year, which tables were matched and what went unclassified.
@@ -136,7 +139,19 @@ def ingest_years(
                     absent = govdata.missing_columns(header, res.table)
                     del rows
                     if not records:
-                        log.warning("%s: no rows", res.name)
+                        # A substantial file that yields nothing is a parse failure, not
+                        # an empty dataset. Recording it as an error rather than a
+                        # warning is what makes the run fail instead of quietly
+                        # continuing — 2019-2020 direct acquisitions were lost this way.
+                        if len(blob) > EMPTY_PARSE_ALARM_BYTES:
+                            msg = f"parsed 0 rows from {len(blob):,} bytes"
+                            log.error("%s: %s", res.name, msg)
+                            summary.append(
+                                {"year": year, "table": res.table.key,
+                                 "resource": res.name, "rows": 0, "error": msg}
+                            )
+                        else:
+                            log.warning("%s: no rows", res.name)
                         continue
                     path = _write_resource(records, res)
                     n = len(records)
