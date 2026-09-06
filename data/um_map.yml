@@ -1,0 +1,105 @@
+# Unit-of-measure normalisation table.
+#
+# `itemMeasureUnit` in SEAP is free text typed by the buyer. Across a single day we
+# observe "bucata", "bucată", "buc", "Buc", "BUC", "pachet", "PACHET", "ora", "Cutie".
+# Without collapsing these, every per-unit aggregate is wrong.
+#
+# Each canonical unit declares:
+#   aliases     — lowercase, diacritic-folded forms that map to it
+#   comparable  — may unit prices be compared across records for this unit?
+#   dimension   — for future unit conversion (not yet applied)
+#
+# `comparable: false` marks BUNDLE units. "1 set" or "1 pachet" describes an unknown
+# quantity of goods, so its price is not comparable with another record's "1 set".
+# These rows are kept (they are real spending) but excluded from price benchmarks
+# unless a pack size is recovered. This is the single most important correctness
+# rule in the project — see METHODOLOGY.md.
+
+units:
+  buc:
+    dimension: count
+    comparable: true
+    aliases: [buc, buc., bucata, bucati, bucată, bucăți, bucata., piesa, piesă, pcs, pc, ex, exemplar, unitate, unit, um, buc/set]
+
+  kg:
+    dimension: mass
+    comparable: true
+    aliases: [kg, kg., kilogram, kilograme, kgr]
+  g:
+    dimension: mass
+    comparable: true
+    aliases: [g, gr, gram, grame]
+  t:
+    dimension: mass
+    comparable: true
+    aliases: [t, to, tona, tone, tonă, tona metrica]
+
+  l:
+    dimension: volume
+    comparable: true
+    aliases: [l, litru, litri, lt, ltr]
+  ml:
+    dimension: volume
+    comparable: true
+    aliases: [ml, mililitru, mililitri]
+  mc:
+    dimension: volume
+    comparable: true
+    aliases: [mc, m3, "m³", metru cub, metri cubi, mc.]
+
+  m:
+    dimension: length
+    comparable: true
+    aliases: [m, m., metru, metri, ml liniar, metru liniar, metri liniari]
+  km:
+    dimension: length
+    comparable: true
+    aliases: [km, kilometru, kilometri]
+  mp:
+    dimension: area
+    comparable: true
+    aliases: [mp, m2, "m²", metru patrat, metri patrati, metru pătrat, metri pătrați, mp.]
+
+  ora:
+    dimension: time
+    comparable: true
+    aliases: [ora, ore, oră, h, hr, ora/om, om-ora, om ora]
+  zi:
+    dimension: time
+    comparable: true
+    aliases: [zi, zile, zi/om, om-zi]
+  luna:
+    dimension: time
+    comparable: true
+    aliases: [luna, luni, lună, month]
+  an:
+    dimension: time
+    comparable: true
+    aliases: [an, ani, year]
+
+  kwh:
+    dimension: energy
+    comparable: true
+    aliases: [kwh, kw/h, kwh., kilowatt ora, mwh]
+
+  # ---- BUNDLE UNITS: real spending, but not price-comparable ----
+  set:
+    dimension: bundle
+    comparable: false
+    aliases: [set, seturi, kit, kituri, ansamblu, garnitura, garnitură]
+  pachet:
+    dimension: bundle
+    comparable: false
+    aliases: [pachet, pachete, pak, pack, colet, bax, baxuri, pachet servicii]
+  cutie:
+    dimension: bundle
+    comparable: false
+    aliases: [cutie, cutii, box, caseta, casetă, flacon, flacoane, doza, doză, doze, blister]
+  lot:
+    dimension: bundle
+    comparable: false
+    aliases: [lot, loturi, partida, partidă, transa, transă]
+  serviciu:
+    dimension: bundle
+    comparable: false
+    aliases: [serviciu, servicii, prestatie, prestație, lucrare, lucrari, lucrări, proiect, abonament, contract]

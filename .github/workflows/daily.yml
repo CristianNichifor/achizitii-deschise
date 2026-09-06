@@ -1,0 +1,75 @@
+name: daily ingest
+
+on:
+  schedule:
+    # 04:20 UTC — after SEAP has settled the previous day.
+    - cron: "20 4 * * *"
+  workflow_dispatch:
+    inputs:
+      start:
+        description: "Start date (YYYY-MM-DD)"
+        required: false
+      end:
+        description: "End date (YYYY-MM-DD)"
+        required: false
+
+# Never two writers on state/ or the data branch.
+concurrency:
+  group: ingest
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -e ".[dev]"
+
+      - name: Test
+        run: pytest -q
+
+      - name: Ingest
+        run: |
+          if [ -n "${{ inputs.start }}" ]; then
+            achizitii --start "${{ inputs.start }}" ${{ inputs.end && format('--end {0}', inputs.end) || '' }}
+          else
+            achizitii --days-back 1
+          fi
+
+      - name: Summarise
+        run: |
+          python - <<'PY'
+          import duckdb, pathlib
+          if not list(pathlib.Path("site/data/items").rglob("*.parquet")):
+              print("no data produced"); raise SystemExit(0)
+          duckdb.sql("""
+            SELECT count(*) items,
+                   sum(comparabil::INT) comparabile,
+                   count(DISTINCT judet) judete,
+                   count(DISTINCT cpv) cpv
+            FROM 'site/data/items/**/*.parquet'
+          """).show()
+          PY
+
+      - name: Upload artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-${{ github.run_id }}
+          path: |
+            site/data/items
+            data/core
+          retention-days: 30
+
+  # Publishing to Pages is intentionally a separate, manual-first step: data quality
+  # is not yet validated at scale, and nothing should go public by accident.
+  # Enable once Stage 1 lands.
