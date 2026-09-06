@@ -186,6 +186,15 @@ class Indicator:
     """Why this rule exists — what behaviour it is designed to surface."""
     applies_to: tuple[str, ...]
     """Canonical table keys this rule reads."""
+
+    requires_columns: tuple[str, ...] = ()
+    """Columns that must exist AND be populated for this rule to mean anything.
+
+    Some fields exist only in part of the archive — `numar_oferte` was dropped from the
+    exports after 2018. Expressing that as a data requirement rather than a hardcoded
+    year window means the rule starts working again by itself if the publisher restores
+    the column, and it never silently reports "no findings" when the truth is "no data".
+    """
     valid_from: date = date(2023, 1, 1)
     valid_to: date | None = None
     sql: str = ""
@@ -389,11 +398,101 @@ MODIFICARE_01 = Indicator(
     params={"crestere_minima": 0.15, "crestere_minima_ron": 50_000.0},
 )
 
+OFERTANT_UNIC_01 = Indicator(
+    identifier="ofertant-unic-01",
+    name_ro="Contract atribuit după primirea unei singure oferte",
+    description_ro=(
+        "Listează contractele la care autoritatea a primit o singură ofertă. O procedură "
+        "cu un singur ofertant nu produce presiune competitivă asupra prețului, indiferent "
+        "dacă procedura a fost respectată."
+    ),
+    legal_basis=(
+        "Legea 98/2016, art. 2 — principiile nediscriminării, tratamentului egal și "
+        "promovării concurenței"
+    ),
+    rationale=(
+        "Rata ofertelor unice este cel mai bine documentat indicator din literatura de "
+        "specialitate privind riscul în achiziții. Se calculează direct din numărul de "
+        "oferte primite, fără nicio inferență."
+    ),
+    applies_to=("contracte",),
+    requires_columns=("numar_oferte",),
+    sql="""
+    WITH c AS (
+      SELECT an, autoritate, autoritate_cui, furnizor, furnizor_cui, nr_contract,
+             data_contract, cpv, tip_procedura, categorie,
+             TRY_CAST(numar_oferte AS INTEGER) oferte,
+             TRY_CAST(valoare_ron AS DOUBLE) valoare
+      FROM contracte
+      WHERE TRY_CAST(numar_oferte AS INTEGER) IS NOT NULL
+    )
+    SELECT 'ofertant-unic-01' AS indicator, an, autoritate, autoritate_cui,
+           furnizor, furnizor_cui, nr_contract, data_contract, cpv, tip_procedura,
+           categorie, oferte AS numar_oferte, round(valoare, 2) AS valoare_ron
+    FROM c
+    WHERE oferte = 1 AND valoare >= $valoare_minima
+    ORDER BY valoare DESC
+    """,
+    params={"valoare_minima": 100_000.0},
+)
+
+ESTIMARE_01 = Indicator(
+    identifier="estimare-01",
+    name_ro="Valoare atribuită egală sau peste valoarea estimată",
+    description_ro=(
+        "Compară valoarea contractului cu valoarea estimată publicată pentru aceeași "
+        "procedură. O procedură competitivă produce de regulă o reducere față de "
+        "estimare; atribuirea la nivelul estimării sau peste sugerează absența presiunii "
+        "competitive."
+    ),
+    legal_basis="Legea 98/2016, art. 2 și art. 9 — estimarea valorii achiziției",
+    rationale=(
+        "Estimarea apare pe rândul contractului în exporturile 2016-2018, deci raportul "
+        "se calculează fără a alătura tabele — ceea ce evită dubla numărare introdusă de "
+        "acordurile-cadru, unde zeci de contracte subsecvente se acumulează sub un "
+        "singur anunț."
+    ),
+    applies_to=("contracte",),
+    requires_columns=("valoare_estimata_ron",),
+    sql="""
+    WITH c AS (
+      SELECT an, autoritate, autoritate_cui, furnizor, nr_contract, data_contract,
+             cpv, tip_procedura, tip_incheiere, categorie,
+             TRY_CAST(valoare_ron AS DOUBLE) atribuit,
+             TRY_CAST(valoare_estimata_ron AS DOUBLE) estimat
+      FROM contracte
+      -- Framework agreements accumulate many contracts under one estimate, so their
+      -- ratio is meaningless. Only single contracts are comparable.
+      WHERE lower(coalesce(tip_incheiere, '')) NOT LIKE '%acord-cadru%'
+    )
+    SELECT 'estimare-01' AS indicator, an, autoritate, autoritate_cui, furnizor,
+           nr_contract, data_contract, cpv, tip_procedura, categorie,
+           round(estimat, 2) AS valoare_estimata_ron,
+           round(atribuit, 2) AS valoare_atribuita_ron,
+           round(100.0 * atribuit / nullif(estimat, 0), 1) AS pct_din_estimare
+    FROM c
+    WHERE estimat > 0 AND atribuit > 0
+      AND atribuit >= estimat * $prag_raport
+      AND atribuit >= $valoare_minima
+      -- Upper plausibility bound. Awards many times the estimate are source-data
+      -- errors, not procurement decisions: sampled cases include a commune recorded
+      -- at 1.18 bn RON against a 2.1 M estimate, with a NULL contract number — the
+      -- signature of a row whose fields shifted left because one was missing. Such
+      -- rows cannot be distinguished from valid ones after the fact, so they are
+      -- excluded from findings and counted separately by `achizitii validate`.
+      AND atribuit <= estimat * $raport_maxim
+    ORDER BY atribuit DESC
+    """,
+    params={"prag_raport": 0.99, "valoare_minima": 100_000.0, "raport_maxim": 5.0},
+)
+
 INDICATORS: tuple[Indicator, ...] = (
     PRAG_01,
     FARA_COMPETITIE_01,
     DIVIZARE_01,
     DEPENDENTA_01,
     MODIFICARE_01,
+    OFERTANT_UNIC_01,
+    ESTIMARE_01,
 )
 INDICATORS_BY_ID = {i.identifier: i for i in INDICATORS}

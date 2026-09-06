@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -297,6 +298,29 @@ def validate() -> dict[str, Any]:
                     }
                 )
 
+    # Rows whose award dwarfs the estimate are source-data errors rather than
+    # procurement decisions — typically a row with a MISSING field, which shifts columns
+    # left and is invisible to the malformed-row check (that only catches rows with too
+    # MANY fields). Counted here so their exclusion from findings is visible.
+    if "contracte" in available:
+        try:
+            suspect = con.execute(
+                """
+                SELECT an, count(*) n, round(max(
+                         TRY_CAST(valoare_ron AS DOUBLE)
+                         / nullif(TRY_CAST(valoare_estimata_ron AS DOUBLE), 0)), 1) max_ratio
+                FROM contracte
+                WHERE TRY_CAST(valoare_estimata_ron AS DOUBLE) > 0
+                  AND TRY_CAST(valoare_ron AS DOUBLE)
+                      > 5 * TRY_CAST(valoare_estimata_ron AS DOUBLE)
+                GROUP BY an ORDER BY an
+                """
+            ).fetch_arrow_table().to_pylist()
+        except duckdb.Error:
+            suspect = []
+        if suspect:
+            tables["implausible_award_vs_estimate"] = suspect
+
     con.close()
     return {"tables": tables, "problems": problems, "ok": not problems}
 
@@ -318,6 +342,23 @@ def detect_ceilings() -> list[dict[str, Any]]:
     rows = con.execute(detect_ceiling_sql()).fetch_arrow_table().to_pylist()
     con.close()
     return rows
+
+
+def _unusable_columns(con: duckdb.DuckDBPyConnection, ind: Any) -> list[str]:
+    """Required columns that do not exist, or exist but are entirely NULL."""
+    unusable: list[str] = []
+    for table in ind.applies_to:
+        for col in ind.requires_columns:
+            try:
+                populated = con.execute(
+                    f"SELECT count({col}) FROM {table}"
+                ).fetchone()[0]
+            except duckdb.Error:
+                unusable.append(f"{table}.{col} (absent)")
+                continue
+            if not populated:
+                unusable.append(f"{table}.{col} (all NULL)")
+    return unusable
 
 
 def run_indicators(
@@ -350,8 +391,23 @@ def run_indicators(
             )
             continue
 
+        # A required column that is absent or entirely NULL means "no data", not
+        # "no findings". Reporting zero results for those is how an empty pipeline
+        # passes for a clean one.
+        unusable = _unusable_columns(con, ind)
+        if unusable:
+            results.append(
+                {
+                    "indicator": ind.identifier,
+                    "skipped": f"required column(s) absent or empty: {unusable}",
+                }
+            )
+            continue
+
         params = dict(ind.params)
-        if "$prag" in ind.sql:
+        # Word-boundary match: a plain substring test also fires on "$prag_raport",
+        # injecting a parameter the query never binds and failing the whole indicator.
+        if re.search(r"\$prag\b", ind.sql):
             prag = threshold_for(day, "goods_services")
             if prag is None:
                 results.append(
