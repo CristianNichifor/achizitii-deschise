@@ -102,6 +102,14 @@ CONTRACTE = TableSpec(
         "cpv": _c("cod cpv", "cpvcode"),
         "cpv_denumire": _c("denumire cpv"),
         "nr_lot": _c("numar lot"),
+        # WITHOUT THESE TWO, CONTRACT VALUES CANNOT BE SUMMED SAFELY.
+        # 95% of contract rows are framework agreements (217,407 of 229,089 in H1 2026),
+        # averaging 55.6 contracts per notice, and 128,920 of those are call-offs under
+        # a framework whose headline value is also present. Adding them together
+        # double-counts massively: 534.4 bn RON of "acord-cadru" against 176.9 bn of
+        # actual public procurement contracts.
+        "tip_incheiere": _c("tip incheiere contract", "tipincheierecontract"),
+        "incheiat_prin": _c("incheiat prin"),
         "data_contract": _c("data contract", "datacontract"),
         "nr_contract": _c("numar contract", "numarcontract"),
         "valoare_ron": _c("valoare contract ron", "valoareron", "valoare"),
@@ -348,8 +356,21 @@ _PUNCT = re.compile(r"[^\w\s]")
 
 
 def _header_key(name: str) -> str:
-    """Normalise a source header for alias matching: fold + drop punctuation."""
-    return re.sub(r"\s+", " ", _PUNCT.sub(" ", fold(name))).strip()
+    """Normalise a source header for alias matching.
+
+    Collapses to letters and digits only, because the exports use at least three
+    conventions for the same column:
+
+        "CUI autoritate contractanta"   spaced      (2022-2026)
+        "AutoritateContractantaCUI"     camel       (2016-2018 CSV)
+        "AUTORITATE_CONTRACTANTA_CUI"   snake caps  (2019-2021)
+
+    Underscores are word characters, so a fold that only stripped punctuation left
+    `castigator_cui` unmatched against the alias `castigatorcui`. The 2021 export
+    silently lost autoritate_cui, furnizor_cui, cpv and tip_contract that way — 100%
+    NULL across 1,043,345 rows, with no error.
+    """
+    return re.sub(r"[^a-z0-9]", "", fold(name))
 
 
 def map_columns(header: list[str], spec: TableSpec) -> dict[str, int]:
@@ -363,6 +384,16 @@ def map_columns(header: list[str], spec: TableSpec) -> dict[str, int]:
                 mapping[canonical] = idx
                 break
     return mapping
+
+
+def missing_columns(header: list[str], spec: TableSpec) -> list[str]:
+    """Canonical fields this file has no source column for.
+
+    The inverse of `unmapped headers`, and the more dangerous direction: an unmatched
+    alias produces a column of NULLs rather than an error. The 2021 export lost four
+    columns this way without anything failing.
+    """
+    return sorted(set(spec.columns) - set(map_columns(header, spec)))
 
 
 def to_records(
