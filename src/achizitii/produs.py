@@ -44,6 +44,44 @@ _SPEC_TAIL = re.compile(
 _MAX_HEAD_TOKENS = 3
 """Beyond this the tail is specification, not identity."""
 
+# Descriptions that name no product. Counts measured across 2016-2021 direct
+# acquisitions (15.7M rows); the largest are "conform descriere" (19,281), "-" (12,277),
+# "." (8,217), "achizitie directa" (7,711) and "conform oferta" (6,845) — roughly 66,800
+# rows in total.
+#
+# These rows are real spending and are kept, but they cannot support a price comparison:
+# nothing distinguishes one "conform descriere" from another, so grouping them would
+# average unrelated products. Short descriptions are NOT uninformative by default —
+# "banane", "oua" and "cartofi" are among the most common values in the archive and are
+# perfectly good product names.
+_UNINFORMATIVE = re.compile(
+    r"""(?ix)^\s*(?:
+        -+ | \.+ | _+ | x+ | n/?a | null | none | test |
+        conform\s+(?:descriere\w*|oferta|ofertei|caiet\w*(?:\s+de\s+sarcini)?
+                   |documenta\w+|specificat\w+(?:\s+\w+)*) |
+        achizit(?:ie|ii)\s+direct[ae]? | cumparare\s+directa |
+        diverse | divers | produse | produs | materiale | bunuri | altele
+    )\s*$"""
+)
+
+
+def uninformative_reason(
+    description: str | None, autoritate: str | None = None
+) -> str | None:
+    """Why a description cannot identify a product, or None if it can."""
+    if not description or not description.strip():
+        return "descriere_lipsa"
+    text = description.strip()
+    if _UNINFORMATIVE.match(text):
+        return "descriere_generica"
+    # Some buyers put their own name in the description field. Rare overall (0.47% in
+    # 2016, near zero since), but it identifies no product at all.
+    if autoritate and fold(text) == fold(autoritate):
+        return "descriere_egala_cu_autoritatea"
+    if len(fold(text).replace(" ", "")) < 3:
+        return "descriere_prea_scurta"
+    return None
+
 
 @dataclass(frozen=True)
 class Product:
@@ -60,6 +98,11 @@ class Product:
 
     brands_found: tuple[str, ...]
     """All brands mentioned, for the art. 156 check."""
+
+    informative: bool = True
+    """False when the description names no product; excluded from price grouping."""
+
+    uninformative_reason: str | None = None
 
 
 @functools.lru_cache(maxsize=1)
@@ -122,7 +165,9 @@ def brand_without_equivalent(text: str | None) -> tuple[str, ...]:
     return find_brands(text)
 
 
-def product_key(description: str | None, cpv: str | None = None) -> Product:
+def product_key(
+    description: str | None, cpv: str | None = None, autoritate: str | None = None
+) -> Product:
     """Reduce a description to a grouping key.
 
     The key combines the leading content words with the brand when one is present, so
@@ -132,6 +177,19 @@ def product_key(description: str | None, cpv: str | None = None) -> Product:
     be wrong.
     """
     raw = description or ""
+    reason = uninformative_reason(raw, autoritate)
+    if reason:
+        # Keyed on CPV alone: the spending is still counted, but these rows cannot
+        # form a product group, and must not be silently merged into a real one.
+        return Product(
+            head="",
+            brand=None,
+            key=re.sub(r"\D", "", cpv or "")[:8],
+            brands_found=find_brands(raw),
+            informative=False,
+            uninformative_reason=reason,
+        )
+
     brands = find_brands(raw)
     brand = brands[0] if brands else None
 
