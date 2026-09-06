@@ -1,0 +1,70 @@
+name: "Drept la replică / Right of reply"
+description: "Sunteți autoritate contractantă sau operator economic și contestați o interpretare"
+title: "[replică] "
+labels: ["drept-la-replica", "prioritate"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Ce este acest formular
+
+        Indicatorii publicați aici semnalează **tipare care merită verificate**. Nu sunt
+        acuzații, nu constată încălcări ale legii și nu stabilesc vinovăția nimănui.
+
+        Fiecare tipar are explicații nevinovate plauzibile: o concentrare a valorilor sub
+        un plafon poate reflecta un buget intern real; o procedură fără anunț prealabil
+        este legală în situațiile prevăzute de art. 104 din Legea 98/2016; o pondere mare
+        către un singur furnizor poate însemna că există o singură firmă calificată.
+
+        **Publicăm poziția dumneavoastră alături de înregistrarea contestată**, needitată
+        pe fond. Nu ștergem date publice corecte, dar nici nu lăsăm o cifră contestată
+        fără mențiune.
+
+        Răspundem inițial în 5 zile lucrătoare.
+
+  - type: input
+    id: entitate
+    attributes:
+      label: "Entitatea vizată"
+      description: "Denumirea autorității contractante sau a operatorului economic, și CUI."
+      placeholder: "PRIMĂRIA ... , CUI 1234567"
+    validations:
+      required: true
+
+  - type: input
+    id: inregistrare
+    attributes:
+      label: "Înregistrarea sau indicatorul contestat"
+      description: "Ex: ocid-ul, numărul achiziției, sau identificatorul indicatorului (prag-01, divizare-01, dependenta-01 ...)."
+    validations:
+      required: true
+
+  - type: textarea
+    id: pozitie
+    attributes:
+      label: "Poziția dumneavoastră"
+      description: >
+        Ce anume considerați greșit sau incomplet în modul în care apare situația.
+        Acest text va fi publicat alături de înregistrare, needitat pe fond.
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: "Context sau justificare (opțional)"
+      description: >
+        Ex: temeiul legal invocat, circumstanțele achiziției, faptul că piața locală
+        are un singur furnizor calificat, existența unei proceduri anulate anterior etc.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: confirmari
+    attributes:
+      label: "Confirmări"
+      options:
+        - label: "Înțeleg că textul de mai sus va fi publicat public, alături de înregistrarea contestată."
+          required: true
+        - label: "Nu am inclus date cu caracter personal (nume, e-mail, telefon ale persoanelor fizice)."
+          required: true

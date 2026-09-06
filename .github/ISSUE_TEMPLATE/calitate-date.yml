@@ -1,0 +1,64 @@
+name: "Problemă de calitate a datelor / Data quality problem"
+description: "O problemă sistematică: o coloană goală, un an lipsă, un indicator care pare greșit"
+title: "[calitate] "
+labels: ["calitate-date", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Pentru probleme care afectează multe înregistrări deodată, nu una singură.
+
+        Acest proiect a avut deja mai multe defecte de acest tip — un an întreg absent
+        din cauza unei greșeli de scriere în identificatorul setului de date, coloane
+        golite de o schimbare de denumire, fișiere de peste 100 MB citite ca goale.
+        Niciunul nu a produs vreo eroare vizibilă. Semnalările de acest fel sunt
+        deosebit de utile.
+
+  - type: dropdown
+    id: tip
+    attributes:
+      label: "Tipul problemei"
+      options:
+        - "O coloană este goală sau are valori absurde"
+        - "Un an sau un trimestru pare să lipsească"
+        - "Totalurile par prea mari (posibilă dublare)"
+        - "Totalurile par prea mici (posibilă trunchiere)"
+        - "Un indicator produce rezultate care nu au sens"
+        - "Altceva"
+    validations:
+      required: true
+
+  - type: input
+    id: domeniu
+    attributes:
+      label: "Unde apare"
+      description: "Tabelul, anul, coloana sau indicatorul afectat."
+      placeholder: "ex: contracte, 2022, coloana valoare_ron"
+    validations:
+      required: true
+
+  - type: textarea
+    id: descriere
+    attributes:
+      label: "Ce ați observat"
+      description: "Descrieți ce vedeți și, dacă se poate, cum ați ajuns acolo (interogare, filtru, pagină)."
+    validations:
+      required: true
+
+  - type: textarea
+    id: asteptat
+    attributes:
+      label: "La ce v-ați fi așteptat"
+      description: "Opțional, dar ajută la triaj."
+    validations:
+      required: false
+
+  - type: markdown
+    attributes:
+      value: |
+        **Verificare rapidă pe care o puteți rula singur**, dacă aveți depozitul local:
+
+        ```bash
+        achizitii validate                          # verificări între ani
+        achizitii gov --years 2016-2026 --check-coverage   # ce tabele are fiecare an
+        ```

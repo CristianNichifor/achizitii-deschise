@@ -118,6 +118,18 @@ arithmetic over public fields can be checked by the authority it names.
 Bunching at a threshold may be a real budget cap; a 91% supplier share may mean one
 qualified local firm. See `METHODOLOGY.md`.
 
+## Corectări și drept la replică
+
+Indicatorii de mai sus numesc autorități contractante și operatori economici reali.
+Oricine poate cere o corectare, iar entitățile numite au **drept la replică**: publicăm
+poziția lor alături de înregistrarea contestată, needitată pe fond.
+
+Nu ștergem date publice corecte pentru că sunt incomode — dar nici nu lăsăm o cifră
+contestată fără mențiune.
+
+👉 **[CORRECTIONS.md](CORRECTIONS.md)** — procesul complet, în română și engleză.
+Răspuns inițial în 5 zile lucrătoare.
+
 ## Data sources and licence
 
 | Source | Terms | Role |
