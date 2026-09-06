@@ -162,11 +162,19 @@ Each indicator has innocent explanations, and the output must never imply otherw
 
 The correct reading of any finding is **"this warrants review"**, never "this is fraud".
 
-### Not yet implemented
+### Correction: single-bidder rate IS computable, for part of the archive
 
-- **Single-bidder rate** — the strongest indicator in the literature. **Not computable
-  from the bulk exports**, which carry no bidder counts. It requires
-  `GetCANoticeContracts` from the API, per notice.
+An earlier version of this document stated that single-bidder rate was not computable
+from the bulk exports. **That was wrong.** The 2016–2018 exports carry
+`NumarOfertePrimite` — the number of offers received — on every contract row. It was
+dropped from later exports, so `ofertant-unic-01` is limited to the years that publish
+it, expressed as a data requirement rather than a hardcoded window so the rule resumes
+automatically if the column returns.
+
+Measured on 2016–2017: 28,646 contracts received exactly one offer, against 24,034 with
+two and 25,386 with three.
+
+### Not yet implemented
 - **Corruption Risk Index** composite scoring (Government Transparency Institute). The
   intent remains to adopt a published methodology rather than invent a score, but the
   missing bidder data blocks a faithful implementation today.
