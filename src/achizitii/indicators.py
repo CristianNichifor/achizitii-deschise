@@ -47,14 +47,16 @@ THRESHOLDS: list[dict[str, Any]] = [
         "from": date(2023, 1, 1),
         "to": None,
         "goods_services": 270_120.0,
-        # Works is deliberately absent: sources disagree (900,000 vs 900,400) and no
-        # empirical confirmation has been made. None means "unknown", never "no limit".
-        "works": None,
+        "works": 900_400.0,
         "verified": True,
         "source": (
-            "confirmed empirically: H1 2026 goods/services direct acquisitions stop at "
-            "270,120 RON — 8 records above it across 270,120-280,000, against 377 in "
-            "the 1,120 RON below, and 478 priced at exactly 270,000"
+            "Both confirmed against H1 2026 data (1,053,138 goods/services records). "
+            "Goods/services: 1,445 in (260,000, 270,120] against 21 above it; only "
+            "0.035% of all records exceed the ceiling, and sampled exceedances are "
+            "misclassifications (e.g. road maintenance works booked as 'Servicii', "
+            "which carries the higher works ceiling). "
+            "Works: 197 in (890,000, 900,000], 20 in (900,000, 900,400], and ZERO in "
+            "(900,400, 910,000] — which excludes 900,000 and pins 900,400."
         ),
     },
 ]
@@ -88,6 +90,41 @@ CEILING_MIN_RATIO = 8.0
 
 CEILING_WINDOW = 20_000.0
 """Lei either side of a candidate used to measure the drop."""
+
+
+CORROBORATION_MAX_EXCEEDANCE_PCT = 0.5
+"""A declared ceiling is corroborated when under this share of records exceed it."""
+
+
+def corroborate_ceiling_sql(category: str = "goods_services") -> str:
+    """Test a declared ceiling against the data, rather than assuming the cliff scan found it.
+
+    `detect_ceiling_sql` locates the cliff but not its exact value: every candidate above
+    the true ceiling scores alike, and the +/-20,000 lei window smears the estimate by a
+    few thousand lei. This instead asks a sharper question — what share of records exceed
+    a *specific* declared figure — which is what actually validates a legal value.
+
+    A ceiling is corroborated when exceedances are a rounding error. Some are expected:
+    misclassified works carry a higher ceiling and legitimately appear above the
+    goods/services figure.
+    """
+    types = (
+        "('lucrari')" if category == "works" else "('furnizare','servicii')"
+    )
+    return f"""
+    WITH d AS (
+      SELECT an, TRY_CAST(valoare_ron AS DOUBLE) v FROM achizitii_directe
+      WHERE lower(coalesce(tip_contract,'')) IN {types}
+        AND TRY_CAST(valoare_ron AS DOUBLE) > 0
+    )
+    SELECT an,
+           count(*) AS n_total,
+           count(*) FILTER (WHERE v > $prag * 0.96 AND v <= $prag) AS n_just_below,
+           count(*) FILTER (WHERE v > $prag) AS n_peste,
+           round(100.0 * count(*) FILTER (WHERE v > $prag) / count(*), 4) AS pct_peste,
+           max(v) FILTER (WHERE v <= $prag) AS max_sub_plafon
+    FROM d GROUP BY an ORDER BY an
+    """
 
 
 def detect_ceiling_sql(window: float = CEILING_WINDOW) -> str:
