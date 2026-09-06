@@ -95,12 +95,14 @@ CONTRACTE = TableSpec(
         "autoritate_cui": _c("cui autoritate contractanta", "autoritatecontractantacui"),
         "tip_procedura": _c("tip procedura", "tipprocedura"),
         "nr_anunt_initiere": _c("numar anunt initiere", "numaranuntparticipare"),
-        "nr_anunt_atribuire": _c("numar anunt atribuire", "numaranunt"),
-        "data_publicare": _c("data publicare", "dataanunt"),
+        "nr_anunt_atribuire": _c("numar anunt atribuire", "numaranuntatribuire", "numaranunt"),
+        "data_publicare": _c("data publicare", "dataanuntatribuire", "dataanunt"),
         "tip_contract": _c("tip contract", "tipcontract"),
-        "criteriu_atribuire": _c("tip criterii de atribuire", "criteriu de atribuire"),
+        "criteriu_atribuire": _c(
+            "tip criterii de atribuire", "criteriu de atribuire", "tipcriteriiatribuire"
+        ),
         "cpv": _c("cod cpv", "cpvcode"),
-        "cpv_denumire": _c("denumire cpv"),
+        "cpv_denumire": _c("denumire cpv", "cpvcodename"),
         "nr_lot": _c("numar lot"),
         # WITHOUT THESE TWO, CONTRACT VALUES CANNOT BE SUMMED SAFELY.
         # 95% of contract rows are framework agreements (217,407 of 229,089 in H1 2026),
@@ -110,6 +112,16 @@ CONTRACTE = TableSpec(
         # actual public procurement contracts.
         "tip_incheiere": _c("tip incheiere contract", "tipincheierecontract"),
         "incheiat_prin": _c("incheiat prin"),
+        # Number of offers received. Present only in the 2016-2018 era exports and
+        # dropped from later ones — which is unfortunate, because single-bidder rate is
+        # the strongest indicator in the procurement-corruption literature. Its absence
+        # from the modern exports is why that indicator is limited to the early years.
+        "numar_oferte": _c("numaroferteprimite", "numar oferte primite"),
+        # The early exports carry the estimate on the contract row itself, so
+        # estimate-versus-award needs no join for those years.
+        "valoare_estimata_ron": _c("valoareestimataparticipare", "valoare estimata"),
+        "licitatie_electronica": _c("culicitatieelectronica"),
+        "subcontractat": _c("subcontractat"),
         "data_contract": _c("data contract", "datacontract"),
         "nr_contract": _c("numar contract", "numarcontract"),
         "valoare_ron": _c("valoare contract ron", "valoareron", "valoare"),
@@ -153,20 +165,29 @@ INITIERE = TableSpec(
     # dynamic purchasing system, a different record) does not match.
     match=re.compile(r"(?i)\banun[tț]uri\s+(de\s+)?(ini[tț]iere|participare)\b"),
     columns={
-        "autoritate": _c("autoritate contractanta"),
-        "autoritate_cui": _c("cui autoritate contractanta"),
-        "tip_anunt": _c("tip anunt"),
-        "tip_procedura": _c("tip procedura"),
+        # The 2016-2018 exports abbreviate: DenumireAC / CUI / MainCPV / ValoareEstimata.
+        # Only three of fourteen columns matched before these aliases, so the table was
+        # present but almost entirely empty.
+        "autoritate": _c("autoritate contractanta", "denumireac"),
+        "autoritate_cui": _c("cui autoritate contractanta", "cui"),
+        "tip_anunt": _c("tip anunt", "tip"),
+        "tip_procedura": _c("tip procedura", "tipprocedura"),
         "stare_procedura": _c("stare procedura"),
-        "nr_anunt_initiere": _c("numar anunt initiere"),
-        "data_publicare": _c("data publicare"),
-        "tip_contract": _c("tip contract"),
-        "modalitate_atribuire": _c("modalitate de atribuire"),
+        "nr_anunt_initiere": _c("numar anunt initiere", "numaranunt"),
+        "data_publicare": _c("data publicare", "datapublicare"),
+        "tip_contract": _c("tip contract", "tipcontract"),
+        "criteriu_atribuire": _c("criteriuatribuire", "criteriu de atribuire"),
+        "modalitate_atribuire": _c("modalitate de atribuire", "modalitatedesfasurare"),
         "loturi": _c("contractul este impartit in loturi"),
         "denumire": _c("denumire procedura"),
-        "cpv": _c("cod cpv"),
-        "cpv_denumire": _c("denumire cpv"),
-        "valoare_estimata_ron": _c("valoare estimata procedura ron"),
+        "cpv": _c("cod cpv", "maincpv"),
+        "cpv_denumire": _c("denumire cpv", "maincpvname"),
+        "valoare_estimata_ron": _c("valoare estimata procedura ron", "valoareestimata"),
+        # County, present ONLY in the 2016-2018 exports. The modern ones dropped it,
+        # which is why county otherwise has to come from the SEAP entity endpoint.
+        "judet": _c("judet"),
+        "utilitati": _c("utilitati"),
+        "fonduri_comunitare": _c("fonduricomunitare", "finantare prin fonduri comunitare"),
     },
 )
 

@@ -11,6 +11,7 @@ import pytest
 from achizitii.govdata import (
     ACHIZITII_DIRECTE,
     CONTRACTE,
+    INITIERE,
     MODIFICARI,
     TABLES,
     _header_key,
@@ -287,3 +288,64 @@ class TestMalformedRows:
         recs, _, malformed = to_records(header, [["PRIMARIA Z"]], ACHIZITII_DIRECTE, "s")
         assert malformed == 0
         assert len(recs) == 1
+
+
+class TestEarlyEraSchemas:
+    """The 2016-2018 exports abbreviate almost every column name."""
+
+    INITIERE_2017: ClassVar[list[str]] = [
+        "NumarAnunt", "DataPublicare", "DenumireAC", "CUI", "Judet", "TipContract",
+        "Utilitati", "TipProcedura", "CriteriuAtribuire", "ValoareEstimata", "Moneda",
+        "ModalitateDesfasurare", "TrimisOJEU", "FonduriComunitare", "MainCPV",
+        "MainCPVName",
+    ]
+    CONTRACTE_2017: ClassVar[list[str]] = [
+        "Castigator", "CastigatorCUI", "CastigatorTara", "CastigatorLocalitate",
+        "CastigatorAdresa", "Tip", "TipContract", "TipProcedura",
+        "AutoritateContractanta", "AutoritateContractantaCUI", "TipAC",
+        "TipActivitateAC", "NumarAnuntAtribuire", "DataAnuntAtribuire",
+        "TipIncheiereContract", "TipCriteriiAtribuire", "CuLicitatieElectronica",
+        "NumarOfertePrimite", "Subcontractat", "NumarContract", "DataContract",
+        "TitluContract", "Valoare", "Moneda", "ValoareRON", "ValoareEUR", "CPVCodeID",
+        "CPVCode", "NumarAnuntParticipare", "DataAnuntParticipare",
+        "ValoareEstimataParticipare", "MonedaValoareEstimataParticipare",
+        "FonduriComunitare", "TipFinantare", "TipLegislatieID", "FondEuropean",
+        "ContractPeriodic", "DepoziteGarantii", "ModalitatiFinantare",
+    ]
+
+    def test_initiere_key_fields(self) -> None:
+        """Regression: only 3 of 18 fields matched, so the table was near-empty."""
+        m = map_columns(self.INITIERE_2017, INITIERE)
+        assert self.INITIERE_2017[m["autoritate"]] == "DenumireAC"
+        assert self.INITIERE_2017[m["autoritate_cui"]] == "CUI"
+        assert self.INITIERE_2017[m["valoare_estimata_ron"]] == "ValoareEstimata"
+        assert self.INITIERE_2017[m["cpv"]] == "MainCPV"
+
+    def test_initiere_carries_county_only_in_early_years(self) -> None:
+        """`Judet` exists here and was dropped from later exports."""
+        m = map_columns(self.INITIERE_2017, INITIERE)
+        assert self.INITIERE_2017[m["judet"]] == "Judet"
+        assert "judet" not in map_columns(
+            ["Autoritate contractanta", "Cod CPV"], INITIERE
+        )
+
+    def test_contracte_exposes_offer_count(self) -> None:
+        """Single-bidder rate is the strongest indicator in the literature.
+
+        It is computable for the early years only: `NumarOfertePrimite` was dropped
+        from the modern exports.
+        """
+        m = map_columns(self.CONTRACTE_2017, CONTRACTE)
+        assert self.CONTRACTE_2017[m["numar_oferte"]] == "NumarOfertePrimite"
+        assert "numar_oferte" not in map_columns(
+            ["Autoritate contractanta", "Valoare contract (RON)"], CONTRACTE
+        )
+
+    def test_contracte_carries_estimate_inline(self) -> None:
+        """No join needed for estimate-versus-award in the early years."""
+        m = map_columns(self.CONTRACTE_2017, CONTRACTE)
+        assert self.CONTRACTE_2017[m["valoare_estimata_ron"]] == "ValoareEstimataParticipare"
+
+    def test_contracte_prefers_ron_over_contract_currency(self) -> None:
+        m = map_columns(self.CONTRACTE_2017, CONTRACTE)
+        assert self.CONTRACTE_2017[m["valoare_ron"]] == "ValoareRON"
