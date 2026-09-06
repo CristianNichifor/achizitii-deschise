@@ -1,0 +1,32 @@
+# Changelog
+
+Corrections to published data are recorded here, as committed to in
+[`CORRECTIONS.md`](CORRECTIONS.md).
+
+A correction is applied to the pipeline rather than to the published file, so that it
+survives regeneration; the entry below names the commit that fixed it.
+
+## Corrections to published data
+
+*None yet — no data has been published.*
+
+Once publication begins, each entry records: the date, who reported it, which records
+were affected, what was wrong, what it was changed to, and the commit that fixed it.
+
+## Data-integrity fixes before first publication
+
+These predate publication, so no published figure was ever affected. They are listed
+because they show what the pipeline has silently got wrong, and because
+`METHODOLOGY.md` treats that history as relevant to how much confidence a reader should
+place in current output.
+
+| Fix | Effect |
+|---|---|
+| False xlsx declared dimension | 2019–2020 direct acquisitions read as empty; ~4.7M rows recovered |
+| Only the first sheet was read | 2023 Q1 read 64,999 of 584,138 rows; `contracte` 2021–22 truncated |
+| Title row taken as header | Whole of 2023 parsed to zero rows |
+| Duplicate quarterly resources | 2023–24 quarters published twice; ~130k phantom rows removed |
+| Misspelled dataset slug upstream | 2019 absent entirely (`achiziti-publice-2019`) |
+| snake_case headers unmatched | 2021 lost four columns across 1,043,345 rows |
+| Renamed initiation notices | `initiere` absent for 2017, 2018, 2020, 2021 |
+| Framework agreements double-counted | Contract totals inflated; 95% of rows are `acord-cadru` |
