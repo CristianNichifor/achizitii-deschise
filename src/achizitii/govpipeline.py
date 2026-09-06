@@ -129,6 +129,25 @@ def _register(con: duckdb.DuckDBPyConnection, keys: set[str]) -> set[str]:
     return available
 
 
+def detect_ceilings() -> list[dict[str, Any]]:
+    """Recover the direct-acquisition ceiling in force each year, from the data.
+
+    Preferred over the legal text: freely available consolidations of Legea 98/2016
+    disagree with each other, and a wrong ceiling invents findings. Because exceeding
+    the ceiling is unlawful, the value distribution collapses at it, and that cliff is
+    unambiguous when present.
+    """
+    from .indicators import detect_ceiling_sql
+
+    con = duckdb.connect()
+    if "achizitii_directe" not in _register(con, {"achizitii_directe"}):
+        con.close()
+        return []
+    rows = con.execute(detect_ceiling_sql()).fetch_arrow_table().to_pylist()
+    con.close()
+    return rows
+
+
 def run_indicators(
     only: list[str] | None = None, on_date: date | None = None, limit: int = 200
 ) -> dict[str, Any]:
@@ -192,5 +211,20 @@ def run_indicators(
         )
         log.info("%s: %d findings", ind.identifier, arrow.num_rows)
 
+    # Ceilings recovered from the data, reported alongside the findings so the declared
+    # threshold can be checked against what the distribution actually shows.
+    ceilings: list[dict[str, Any]] = []
+    if "achizitii_directe" in available:
+        from .indicators import detect_ceiling_sql
+
+        try:
+            ceilings = con.execute(detect_ceiling_sql()).fetch_arrow_table().to_pylist()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("ceiling detection failed: %s", exc)
+
     con.close()
-    return {"date": day.isoformat(), "results": results}
+    return {
+        "date": day.isoformat(),
+        "detected_ceilings": ceilings,
+        "results": results,
+    }

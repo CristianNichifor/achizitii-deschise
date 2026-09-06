@@ -7,9 +7,11 @@ from datetime import date
 import pytest
 
 from achizitii.indicators import (
+    CEILING_MIN_BELOW,
     INDICATORS,
     INDICATORS_BY_ID,
     THRESHOLDS,
+    detect_ceiling_sql,
     threshold_for,
 )
 
@@ -59,7 +61,13 @@ class TestValidityWindow:
 class TestThresholds:
     def test_verified_threshold_returned(self) -> None:
         assert threshold_for(date(2026, 1, 1), "goods_services") == 270_120.0
-        assert threshold_for(date(2026, 1, 1), "works") == 900_000.0
+
+    def test_works_ceiling_is_unknown_not_guessed(self) -> None:
+        """Sources disagree (900,000 vs 900,400) and it is unconfirmed against data.
+
+        None must mean "unknown", so callers skip rather than substitute a default.
+        """
+        assert threshold_for(date(2026, 1, 1), "works") is None
 
     def test_unverified_period_returns_none(self) -> None:
         """A wrong threshold invents findings — refusing to answer is the safe failure."""
@@ -70,3 +78,21 @@ class TestThresholds:
             assert "verified" in row
             assert isinstance(row["verified"], bool)
             assert isinstance(row["from"], date)
+
+    def test_verified_thresholds_cite_their_evidence(self) -> None:
+        """A threshold marked verified must say what verified it."""
+        for row in THRESHOLDS:
+            if row["verified"]:
+                assert row.get("source", "").strip(), row
+
+
+class TestCeilingDetection:
+    def test_sql_is_parameterised_and_scoped(self) -> None:
+        sql = detect_ceiling_sql()
+        assert "achizitii_directe" in sql
+        # Works has a different ceiling, so mixing categories would blur the cliff.
+        assert "furnizare" in sql and "servicii" in sql
+        assert str(int(CEILING_MIN_BELOW)) in sql
+
+    def test_window_is_configurable(self) -> None:
+        assert "5000" in detect_ceiling_sql(window=5000.0)

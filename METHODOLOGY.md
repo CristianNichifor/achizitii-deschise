@@ -108,6 +108,36 @@ Every indicator is arithmetic over public fields. No language model is involved 
 is needed. This is not a limitation — it is what makes a finding checkable by the
 authority it names, and what allows the exact query to be published alongside the result.
 
+### The ceiling is detected from the data, not taken on trust
+
+Establishing the direct-acquisition ceiling from the legal text alone proved unreliable.
+Freely available consolidations of Legea 98/2016 disagree: the originally published form
+gives 132,519 lei for goods/services and 441,730 for works; secondary sources quote
+270,120 and variously 900,000 **or** 900,400; dated consolidations sit behind paywalls.
+A wrong ceiling does not weaken the indicator — it *invents findings*.
+
+So the operative ceiling is recovered from the distribution itself. Exceeding it is
+unlawful, so the density of direct-acquisition values collapses at it. `detect_ceiling_sql`
+scans candidate cutoffs and scores each by the ratio of mass in the 20,000 lei below to
+the 20,000 lei above, requiring at least 100 acquisitions below and a ratio of 8:1.
+
+Measured on H1 2026 goods/services:
+
+| Year | Cliff at | Max observed | Below | Above | Ratio |
+|---|---|---|---|---|---|
+| 2026 | 274,000 | 273,036.00 | 1,755 | 37 | **47.4 : 1** |
+
+**Open discrepancy, not yet resolved.** The declared ceiling is 270,120, but 37 records
+sit above it and the largest is 273,036. Possible explanations — a ceiling raised for
+2026, works contracts misclassified as goods/services, VAT or rounding treatment, or
+genuinely unlawful records — have **not** been distinguished. Until they are, the
+detected value is reported alongside the declared one and neither is presented as
+settled. `prag-01` continues to use the declared legal figure, because that is the one
+with a legal basis behind it.
+
+Detection returns nothing when no sharp cliff exists, which is the correct answer for a
+year whose ceiling cannot be established.
+
 ### Thresholds are dated and verified
 
 The direct-acquisition ceiling is held as a dated schedule, not a constant. The
