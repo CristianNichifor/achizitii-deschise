@@ -355,6 +355,64 @@ def validate() -> dict[str, Any]:
     }
 
 
+def ceilings_report(years: list[int] | None = None) -> dict[str, Any]:
+    """Detected cliff and declared-threshold corroboration, per year.
+
+    Two distinct questions, deliberately kept apart:
+
+    - `detected` scans for the sharpest density cliff, which locates the ceiling
+      without reference to any legal text. It cannot pin an exact value, because every
+      candidate above the true ceiling scores identically.
+    - `corroborated` tests a SPECIFIC declared figure by asking what share of records
+      exceed it. That is what validates a legal value.
+
+    A ceiling that visibly moves in the year a threshold changed is far stronger
+    evidence than either measure in a single year.
+    """
+    from .indicators import (
+        CORROBORATION_MAX_EXCEEDANCE_PCT,
+        corroborate_ceiling_sql,
+        detect_ceiling_sql,
+        threshold_for,
+    )
+
+    con = duckdb.connect()
+    if "achizitii_directe" not in _register(con, {"achizitii_directe"}):
+        con.close()
+        return {"detected": [], "corroborated": [], "note": "no achizitii_directe data"}
+
+    detected = con.execute(detect_ceiling_sql()).fetch_arrow_table().to_pylist()
+
+    corroborated: list[dict[str, Any]] = []
+    for category in ("goods_services", "works"):
+        prag = threshold_for(date(2026, 1, 1), category)
+        if prag is None:
+            corroborated.append(
+                {"category": category, "skipped": "no verified declared threshold"}
+            )
+            continue
+        rows = con.execute(
+            corroborate_ceiling_sql(category), {"prag": prag}
+        ).fetch_arrow_table().to_pylist()
+        for row in rows:
+            if years and row["an"] not in years:
+                continue
+            row["category"] = category
+            row["declared_prag"] = prag
+            # The declared figure only applies from 2023; earlier years are reported
+            # for shape, not as a pass/fail.
+            row["applicable"] = row["an"] >= 2023
+            row["corroborated"] = bool(
+                row["applicable"]
+                and row["pct_peste"] is not None
+                and row["pct_peste"] < CORROBORATION_MAX_EXCEEDANCE_PCT
+            )
+            corroborated.append(row)
+
+    con.close()
+    return {"detected": detected, "corroborated": corroborated}
+
+
 def detect_ceilings() -> list[dict[str, Any]]:
     """Recover the direct-acquisition ceiling in force each year, from the data.
 
