@@ -69,22 +69,30 @@ ACHIZITII_DIRECTE = TableSpec(
     # "Achiziții directe", "Achizitii Directe T I 2024", "Cumparari directe 2017 - T1"
     match=re.compile(r"(?i)\b(achizi[tț]ii|cump[aă]r[aă]ri)\s+directe"),
     columns={
-        "autoritate": _c("autoritate contractanta", "autoritatecontractanta"),
-        "autoritate_cui": _c("cui autoritate contractanta", "autoritatecontractantacui"),
-        "nr_achizitie": _c("numar achizitie directa", "numaranunt", "numar anunt"),
+        "autoritate": _c("autoritate contractanta", "autoritatecontractanta", "nume ac"),
+        "autoritate_cui": _c(
+            "cui autoritate contractanta", "autoritatecontractantacui", "cui ac"
+        ),
+        "nr_achizitie": _c(
+            "numar achizitie directa", "numar achizitie", "numaranunt", "numar anunt"
+        ),
         "data_publicare": _c("data publicare", "dataanunt", "data anunt"),
         "data_finalizare": _c("data finalizare", "datacontract", "data contract"),
-        "denumire": _c("denumire achizitie", "descriere", "titlucontract"),
+        "denumire": _c("denumire achizitie", "denumire", "descriere", "titlucontract"),
         "cpv": _c("cod cpv", "cpvcode"),
         # NOT "cpvcodeid": that column holds a numeric internal id (39831240 -> 15113),
         # not a label. Mapping it here filled the field with meaningless integers.
-        "cpv_denumire": _c("denumire cpv", "cpvcodename", "denumire cod cpv"),
+        "cpv_denumire": _c(
+            "denumire cpv", "cpvcodename", "denumire cod cpv", "nume cpv"
+        ),
         "tip_contract": _c("tip contract", "tipincheierecontract"),
-        "valoare_ron": _c("valoare achizitie ron", "valoareron", "valoare"),
+        "valoare_ron": _c(
+            "valoare achizitie ron", "valoare achizitie", "valoareron", "valoare"
+        ),
         "furnizor": _c("ofertant castigator", "castigator"),
-        "furnizor_cui": _c("cui ofertant castigator", "castigatorcui"),
+        "furnizor_cui": _c("cui ofertant castigator", "castigatorcui", "cui castigator"),
         # present only in the older exports
-        "furnizor_localitate": _c("castigatorlocalitate"),
+        "furnizor_localitate": _c("castigatorlocalitate", "oras castigator"),
         "tip_procedura": _c("tip procedura", "tipprocedura"),
     },
 )
@@ -93,17 +101,23 @@ CONTRACTE = TableSpec(
     key="contracte",
     match=re.compile(r"(?i)^(?!.*subsecvent).*\bcontracte\b(?!.*modificare)"),
     columns={
-        "autoritate": _c("autoritate contractanta", "autoritatecontractanta"),
-        "autoritate_cui": _c("cui autoritate contractanta", "autoritatecontractantacui"),
+        "autoritate": _c(
+            "autoritate contractanta", "autoritatecontractanta", "denumire ac"
+        ),
+        "autoritate_cui": _c(
+            "cui autoritate contractanta", "autoritatecontractantacui", "cui ac"
+        ),
         "tip_procedura": _c("tip procedura", "tipprocedura"),
-        "nr_anunt_initiere": _c("numar anunt initiere", "numaranuntparticipare"),
+        "nr_anunt_initiere": _c(
+            "numar anunt initiere", "numaranuntparticipare", "numar anunt ai"
+        ),
         "nr_anunt_atribuire": _c("numar anunt atribuire", "numaranuntatribuire", "numaranunt"),
         "data_publicare": _c("data publicare", "dataanuntatribuire", "dataanunt"),
         "tip_contract": _c("tip contract", "tipcontract"),
         "criteriu_atribuire": _c(
             "tip criterii de atribuire", "criteriu de atribuire", "tipcriteriiatribuire"
         ),
-        "cpv": _c("cod cpv", "cpvcode"),
+        "cpv": _c("cod cpv", "cpvcode", "cpv code"),
         "cpv_denumire": _c("denumire cpv", "cpvcodename"),
         "nr_lot": _c("numar lot"),
         # WITHOUT THESE TWO, CONTRACT VALUES CANNOT BE SUMMED SAFELY.
@@ -122,7 +136,7 @@ CONTRACTE = TableSpec(
         # The early exports carry the estimate on the contract row itself, so
         # estimate-versus-award needs no join for those years.
         "valoare_estimata_ron": _c("valoareestimataparticipare", "valoare estimata"),
-        "licitatie_electronica": _c("culicitatieelectronica"),
+        "licitatie_electronica": _c("culicitatieelectronica", "cu licitatie electronica"),
         "subcontractat": _c("subcontractat"),
         "data_contract": _c("data contract", "datacontract"),
         "nr_contract": _c("numar contract", "numarcontract"),
@@ -136,11 +150,11 @@ FARA_ANUNT = TableSpec(
     key="fara_anunt",
     match=re.compile(r"(?i)f[aă]r[aă]\s+anun[tț]\s+de\s+ini[tț]iere"),
     columns={
-        "autoritate": _c("autoritate contractanta"),
-        "autoritate_cui": _c("cui autoritate contractanta"),
+        "autoritate": _c("autoritate contractanta", "denumire ac"),
+        "autoritate_cui": _c("cui autoritate contractanta", "cui"),
         "tip_procedura": _c("tip procedura"),
         "nr_anunt_atribuire": _c("numar anunt atribuire"),
-        "data_publicare": _c("data publicare"),
+        "data_publicare": _c("data publicare", "data anunt atribuire"),
         "tip_contract": _c("tip contract"),
         "criteriu_atribuire": _c("criteriu de atribuire", "tip criterii de atribuire"),
         "cpv": _c("cod cpv"),
@@ -148,9 +162,11 @@ FARA_ANUNT = TableSpec(
         "data_contract": _c("data contract"),
         "nr_contract": _c("numar contract"),
         "denumire": _c("denumire contract"),
-        "valoare_ron": _c("valoare atribuita ron", "valoare contract ron"),
-        "furnizor": _c("ofertant castigator"),
-        "furnizor_cui": _c("cui ofertant castigator"),
+        "valoare_ron": _c(
+            "valoare atribuita ron", "valoare contract ron", "valoare atribuita"
+        ),
+        "furnizor": _c("ofertant castigator", "nume castigator"),
+        "furnizor_cui": _c("cui ofertant castigator", "cui castigator"),
     },
 )
 
@@ -174,7 +190,9 @@ INITIERE = TableSpec(
             "autoritate contractanta", "denumireac",
             "denumire autoritate contractanta",  # 2016
         ),
-        "autoritate_cui": _c("cui autoritate contractanta", "cui", "cui ac"),
+        "autoritate_cui": _c(
+            "cui autoritate contractanta", "cui", "cui ac", "cui autoritate"
+        ),
         "tip_anunt": _c("tip anunt", "tip"),
         "tip_procedura": _c("tip procedura", "tipprocedura"),
         "stare_procedura": _c("stare procedura"),
@@ -185,14 +203,19 @@ INITIERE = TableSpec(
         "tip_contract": _c("tip contract", "tipcontract"),
         "criteriu_atribuire": _c("criteriuatribuire", "criteriu de atribuire"),
         "modalitate_atribuire": _c("modalitate de atribuire", "modalitatedesfasurare"),
-        "loturi": _c("contractul este impartit in loturi"),
+        "loturi": _c("contractul este impartit in loturi", "cu loturi"),
         "denumire": _c("denumire procedura"),
-        "cpv": _c("cod cpv", "maincpv", "main cpv code"),
-        "cpv_denumire": _c("denumire cpv", "maincpvname", "denumire cod cpv"),  # 2016
-        "valoare_estimata_ron": _c("valoare estimata procedura ron", "valoareestimata"),
+        "cpv": _c("cod cpv", "maincpv", "main cpv code", "cod cpv procedura"),
+        "cpv_denumire": _c(
+            "denumire cpv", "maincpvname", "denumire cod cpv", "denumire cpv procedura"
+        ),
+        "valoare_estimata_ron": _c(
+            "valoare estimata procedura ron", "valoareestimata",
+            "valoare estimata procedura",
+        ),
         # County, present ONLY in the 2016-2018 exports. The modern ones dropped it,
         # which is why county otherwise has to come from the SEAP entity endpoint.
-        "judet": _c("judet"),
+        "judet": _c("judet", "judet autoritate"),
         "utilitati": _c("utilitati"),
         "fonduri_comunitare": _c("fonduricomunitare", "finantare prin fonduri comunitare"),
     },
@@ -318,9 +341,14 @@ def sniff(blob: bytes) -> str:
 
 
 def _sniff_delimiter(text: str) -> str:
-    """The 2017 exports are caret-delimited; later CSVs use comma or semicolon."""
+    """Delimiters vary by year and are never declared.
+
+    2016-2017 exports are caret-delimited, 2023 Q3 is PIPE-delimited, others use comma
+    or semicolon. Omitting the pipe made a 142 MB file parse as a single column: the
+    header matched no aliases, so all 529,483 rows were dropped without an error.
+    """
     head = text.split("\n", 1)[0]
-    return max("^;,\t", key=head.count)
+    return max("|^;,\t", key=head.count)
 
 
 # ------------------------------------------------------------------------- readers
