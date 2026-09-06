@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from datetime import date, datetime
@@ -21,6 +22,7 @@ log = logging.getLogger(__name__)
 GOV_RAW = DATA / "gov_raw"
 GOV_CORE = DATA / "gov"
 FINDINGS = DATA / "findings"
+PROPOSALS = DATA / "proposals"
 
 INGEST_VERSION = 1
 
@@ -411,6 +413,100 @@ def ceilings_report(years: list[int] | None = None) -> dict[str, Any]:
 
     con.close()
     return {"detected": detected, "corroborated": corroborated}
+
+
+def candidate_keys(cpv_prefix: str | None = None, limit: int = 40) -> list[str]:
+    """Product keys that deterministic grouping left as singletons.
+
+    These are where a synonym table would actually help: everything that grouped
+    cleanly needs no model.
+    """
+    from .produs import product_key
+
+    con = duckdb.connect()
+    if "achizitii_directe" not in _register(con, {"achizitii_directe"}):
+        con.close()
+        return []
+    where = "AND cpv LIKE ?" if cpv_prefix else ""
+    params = [f"{cpv_prefix}%"] if cpv_prefix else []
+    rows = con.execute(
+        f"SELECT denumire, cpv FROM achizitii_directe "
+        f"WHERE denumire IS NOT NULL AND cpv IS NOT NULL {where} LIMIT 20000",
+        params,
+    ).fetchall()
+    con.close()
+
+    counts: dict[str, int] = {}
+    for denumire, cpv in rows:
+        key = product_key(denumire, cpv).key
+        if key:
+            counts[key] = counts.get(key, 0) + 1
+    return [k for k, n in sorted(counts.items()) if n == 1][:limit]
+
+
+def propose_clusters(
+    cpv_prefix: str | None = None, limit: int = 40, dry_run: bool = False
+) -> dict[str, Any]:
+    """Ask a model to cluster leftover keys, and validate every key it returns.
+
+    Output is a proposal for review, never applied. See `achizitii.cluster`.
+    """
+    from .cluster import (
+        InferenceClient,
+        InferenceUnavailable,
+        build_prompt,
+        parse_proposals,
+    )
+
+    keys = candidate_keys(cpv_prefix, limit)
+    if not keys:
+        return {"keys": 0, "note": "no singleton keys found — nothing to cluster"}
+
+    prompt = build_prompt(keys)
+    if dry_run:
+        return {
+            "dry_run": True,
+            "keys": len(keys),
+            "candidates": keys,
+            "prompt_chars": len(prompt),
+            "note": "no API call made",
+        }
+
+    client = InferenceClient.from_env()
+    try:
+        reply = client.chat(prompt)
+    except InferenceUnavailable as exc:
+        # Expected, not exceptional: the provider states availability is not guaranteed.
+        # Nothing downstream depends on this, so the run reports and stops cleanly.
+        return {"keys": len(keys), "unavailable": str(exc), "model": client.model}
+
+    proposals, rejections = parse_proposals(reply, set(keys))
+    PROPOSALS.mkdir(parents=True, exist_ok=True)
+    out = PROPOSALS / f"clusters-{cpv_prefix or 'all'}.json"
+    out.write_text(
+        json.dumps(
+            {
+                "model": client.model,
+                "candidates": keys,
+                "proposals": [
+                    {"eticheta": p.label, "chei": list(p.keys), "motiv": p.reason}
+                    for p in proposals
+                ],
+                "rejected": rejections,
+                "status": "AWAITING HUMAN REVIEW - not used by any pipeline",
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return {
+        "keys": len(keys),
+        "proposals": len(proposals),
+        "rejected": len(rejections),
+        "output": str(out),
+        "model": client.model,
+    }
 
 
 def detect_ceilings() -> list[dict[str, Any]]:
