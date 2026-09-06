@@ -398,14 +398,32 @@ def missing_columns(header: list[str], spec: TableSpec) -> list[str]:
 
 def to_records(
     header: list[str], rows: list[list[str]], spec: TableSpec, source: str
-) -> tuple[list[dict[str, Any]], list[str]]:
-    """Map rows onto the canonical schema. Returns (records, unmapped_headers)."""
+) -> tuple[list[dict[str, Any]], list[str], int]:
+    """Map rows onto the canonical schema.
+
+    Returns (records, unmapped_headers, malformed_row_count).
+
+    Rows with MORE fields than the header are dropped. The 2016-2018 exports are
+    caret-delimited and unquoted, so a description containing "^" splits into extra
+    fields and shifts every column after it — product text then lands in `tip_contract`,
+    CUIs in `cpv`, and so on. Such a row cannot be realigned reliably, and keeping it
+    injects garbage into columns that look populated. Roughly 132 rows in 854,898 for
+    2017 T1 (0.015%).
+
+    Rows with FEWER fields are kept: trailing empty fields are routinely omitted and
+    the missing values simply become None.
+    """
     mapping = map_columns(header, spec)
     unmapped = [
         h for i, h in enumerate(header) if h and i not in set(mapping.values())
     ]
+    width = len(header)
     records: list[dict[str, Any]] = []
+    malformed = 0
     for row in rows:
+        if len(row) > width:
+            malformed += 1
+            continue
         rec: dict[str, Any] = {c: None for c in spec.columns}
         for canonical, idx in mapping.items():
             if idx < len(row):
@@ -415,7 +433,7 @@ def to_records(
             continue
         rec["sursa"] = source
         records.append(rec)
-    return records, unmapped
+    return records, unmapped, malformed
 
 
 # ----------------------------------------------------------------------- discovery
