@@ -168,7 +168,10 @@ INITIERE = TableSpec(
         # The 2016-2018 exports abbreviate: DenumireAC / CUI / MainCPV / ValoareEstimata.
         # Only three of fourteen columns matched before these aliases, so the table was
         # present but almost entirely empty.
-        "autoritate": _c("autoritate contractanta", "denumireac"),
+        "autoritate": _c(
+            "autoritate contractanta", "denumireac",
+            "denumire autoritate contractanta",  # 2016
+        ),
         "autoritate_cui": _c("cui autoritate contractanta", "cui"),
         "tip_anunt": _c("tip anunt", "tip"),
         "tip_procedura": _c("tip procedura", "tipprocedura"),
@@ -181,7 +184,7 @@ INITIERE = TableSpec(
         "loturi": _c("contractul este impartit in loturi"),
         "denumire": _c("denumire procedura"),
         "cpv": _c("cod cpv", "maincpv"),
-        "cpv_denumire": _c("denumire cpv", "maincpvname"),
+        "cpv_denumire": _c("denumire cpv", "maincpvname", "denumire cod cpv"),  # 2016
         "valoare_estimata_ron": _c("valoare estimata procedura ron", "valoareestimata"),
         # County, present ONLY in the 2016-2018 exports. The modern ones dropped it,
         # which is why county otherwise has to come from the SEAP entity endpoint.

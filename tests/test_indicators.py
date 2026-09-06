@@ -204,3 +204,45 @@ class TestFailureSignalling:
             },
         )
         assert cli.main(["indicators"]) == 0
+
+
+class TestDataAvailabilityRequirements:
+    """Some columns exist only in part of the archive."""
+
+    def test_offer_count_indicator_declares_its_requirement(self) -> None:
+        """`numar_oferte` was dropped from post-2018 exports.
+
+        Expressed as a data requirement rather than a hardcoded year window, so the
+        rule resumes automatically if the publisher restores the column — and never
+        reports "no findings" when the truth is "no data".
+        """
+        ind = INDICATORS_BY_ID["ofertant-unic-01"]
+        assert ind.requires_columns == ("numar_oferte",)
+
+    def test_estimate_indicator_declares_its_requirement(self) -> None:
+        assert INDICATORS_BY_ID["estimare-01"].requires_columns == ("valoare_estimata_ron",)
+
+    def test_indicators_without_requirements_declare_none(self) -> None:
+        assert INDICATORS_BY_ID["prag-01"].requires_columns == ()
+
+
+class TestEstimateIndicatorGuards:
+    def test_excludes_framework_agreements(self) -> None:
+        """Frameworks accumulate many contracts under one estimate.
+
+        The joined version of this comparison produced ratios of 1,605% for exactly
+        that reason.
+        """
+        assert "acord-cadru" in INDICATORS_BY_ID["estimare-01"].sql
+
+    def test_has_upper_plausibility_bound(self) -> None:
+        """Awards many times the estimate are source-data errors, not decisions.
+
+        A sampled case recorded a commune at 1.18 bn RON against a 2.1 M estimate with
+        a NULL contract number — a row whose fields shifted left because one was
+        missing, which the malformed-row check cannot see.
+        """
+        ind = INDICATORS_BY_ID["estimare-01"]
+        assert "raport_maxim" in ind.params
+        assert ind.params["raport_maxim"] == 5.0
+        assert "$raport_maxim" in ind.sql
