@@ -91,7 +91,19 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "gov":
         from .govpipeline import ingest_years
 
-        _emit(ingest_years(args.years, args.tables))
+        summary = ingest_years(args.years, args.tables)
+        _emit(summary)
+        # Per-year and per-resource errors are caught so one bad file cannot abort a
+        # decade-long backfill. That must not turn a total failure into a success:
+        # a run that ingested nothing while recording errors is a failure.
+        errored = [f for f in summary["files"] if f.get("error")]
+        if summary["total_rows"] == 0 and errored:
+            print(
+                f"ERROR: ingested 0 rows; {len(errored)} resource(s) failed. "
+                f"First: {errored[0]['error']}",
+                file=sys.stderr,
+            )
+            return 1
         return 0
 
     if args.command == "indicators":
@@ -113,7 +125,19 @@ def main(argv: list[str] | None = None) -> int:
 
         from .govpipeline import run_indicators
 
-        _emit(run_indicators(only=args.only, on_date=args.on_date))
+        summary = run_indicators(only=args.only, on_date=args.on_date)
+        _emit(summary)
+        # Every indicator skipping means there was no data to assess. Reporting that as
+        # success is how a broken pipeline goes unnoticed.
+        if summary["results"] and not any("findings" in r for r in summary["results"]):
+            reasons = {
+                r.get("skipped") or r.get("error") for r in summary["results"]
+            }
+            print(
+                f"ERROR: no indicator produced results. Reasons: {sorted(reasons)}",
+                file=sys.stderr,
+            )
+            return 1
         return 0
 
     return 1
