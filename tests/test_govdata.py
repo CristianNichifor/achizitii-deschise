@@ -562,3 +562,38 @@ class TestDuplicateResources:
         """data.gov.ro declares .xlsx for files that are actually OpenDocument."""
         assert self._res("x", "http://x/a.csv").format_rank == 0
         assert self._res("x", "http://x/a.xls").format_rank == 3
+
+
+class TestPipeDelimited:
+    """2023 Q3 is pipe-delimited — a delimiter no earlier year uses."""
+
+    HEADER_2023_Q3: ClassVar[list[str]] = [
+        "NUME_AC", "CUI_AC", "NUMAR_ACHIZITIE", "DATA_PUBLICARE", "DENUMIRE",
+        "COD_CPV", "NUME_CPV", "TIP_CONTRACT", "FONDURI_COMUNITARE",
+        "DENUMIRE_PROGRAM", "DATA_FINALIZARE", "VALOARE_ACHIZITIE", "CASTIGATOR",
+        "CUI_CASTIGATOR", "TARA_CASTIGATOR", "ORAS_CASTIGATOR",
+    ]
+
+    def test_pipe_delimiter_detected(self) -> None:
+        """Omitting the pipe made a 142 MB file parse as a single column: the header
+        matched no aliases, so all 529,483 rows were dropped without an error."""
+        assert _sniff_delimiter("A|B|C\n1|2|3\n") == "|"
+
+    def test_pipe_csv_round_trip(self) -> None:
+        blob = "﻿NUME_AC|CUI_AC|VALOARE_ACHIZITIE\nPRIMARIA X|123|456\n".encode()
+        header, rows = read_table(blob)
+        assert header == ["NUME_AC", "CUI_AC", "VALOARE_ACHIZITIE"]
+        assert rows == [["PRIMARIA X", "123", "456"]]
+
+    def test_2023_q3_schema_maps(self) -> None:
+        m = map_columns(self.HEADER_2023_Q3, ACHIZITII_DIRECTE)
+        assert self.HEADER_2023_Q3[m["autoritate"]] == "NUME_AC"
+        assert self.HEADER_2023_Q3[m["autoritate_cui"]] == "CUI_AC"
+        assert self.HEADER_2023_Q3[m["valoare_ron"]] == "VALOARE_ACHIZITIE"
+        assert self.HEADER_2023_Q3[m["furnizor_cui"]] == "CUI_CASTIGATOR"
+        assert self.HEADER_2023_Q3[m["cpv"]] == "COD_CPV"
+
+    def test_comma_still_wins_for_comma_files(self) -> None:
+        """Adding the pipe must not break the formats that already worked."""
+        assert _sniff_delimiter("a,b,c\n1,2,3\n") == ","
+        assert _sniff_delimiter("Castigator^CUI^Valoare\n1^2^3\n") == "^"
