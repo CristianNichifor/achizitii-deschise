@@ -632,9 +632,14 @@ def run_indicators(
             continue
 
         params = dict(ind.params)
+        sql = ind.sql
+        if "{PRAGURI}" in sql:
+            from .indicators import thresholds_values_sql
+
+            sql = sql.replace("{PRAGURI}", thresholds_values_sql())
         # Word-boundary match: a plain substring test also fires on "$prag_raport",
         # injecting a parameter the query never binds and failing the whole indicator.
-        if re.search(r"\$prag\b", ind.sql):
+        if re.search(r"\$prag\b", sql):
             prag = threshold_for(day, "goods_services")
             if prag is None:
                 results.append(
@@ -645,7 +650,7 @@ def run_indicators(
             params["prag"] = prag
 
         try:
-            rel = con.execute(ind.sql, params) if params else con.execute(ind.sql)
+            rel = con.execute(sql, params) if params else con.execute(sql)
             # `.arrow()` yields a RecordBatchReader on current DuckDB; we need a Table.
             arrow = rel.fetch_arrow_table()
         except Exception as exc:  # noqa: BLE001
