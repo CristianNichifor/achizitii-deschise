@@ -285,6 +285,32 @@ def _register(con: duckdb.DuckDBPyConnection, keys: set[str]) -> set[str]:
 
 # A column populated in neighbouring years but empty in one is a mapping failure, not a
 # fact about the world. This is the check that would have caught 2021 automatically.
+NUMERIC_LABEL_RE = r"^[0-9]+([.,][0-9]+)?$"
+"""A label that is only digits is an internal id leaking into a name column.
+
+The decimal branch is not decoration: matching only ^[0-9]+$ finds 7.4M of the
+14.1M affected rows and misses every value written "11728.0".
+"""
+
+LABEL_COLUMNS: dict[str, tuple[str, ...]] = {
+    "achizitii_directe": ("cpv_denumire",),
+    "contracte": ("cpv_denumire",),
+}
+"""Columns that must read as human names. Checked for junk, not just for NULLs."""
+
+KNOWN_LABEL_DEFECTS: dict[tuple[str, str], tuple[int, ...]] = {
+    ("achizitii_directe", "cpv_denumire"): tuple(range(2016, 2021)),
+}
+"""Years whose label column is known to carry the internal id instead of a name.
+
+Every one of these years is 100% affected — the exports simply wrote CPV_CODE_ID into
+the name field until 2021. Recording them keeps `validate` meaningful: a permanently
+false `ok` teaches everyone to ignore it, so a known defect belongs in a registry, and
+only a NEW year appearing here is worth alarming about.
+
+`publish.py` repairs them by borrowing the label the same code carries from 2021
+onwards, which covers all but 510 codes. The underlying data is left as published."""
+
 NULL_RATE_ALARM = 0.98
 """A column this empty in a year is treated as lost, not sparse."""
 
@@ -425,6 +451,50 @@ def validate() -> dict[str, Any]:
             impossible = []
         if impossible:
             tables["values_above_legal_ceiling"] = impossible
+
+    # A column can be fully populated and still say nothing. The pre-2019 exports put
+    # the internal CPV_CODE_ID in the CPV *name* column, so 39831240 read "15113"
+    # instead of "Produse de curatenie" — 14,074,968 rows, 56% of every labelled row.
+    # Null-rate checks are blind to this by construction, and it reached the published
+    # site: a quarter of the CPV table showed a number where the product name belongs.
+    #
+    # So label columns are also checked for being *meaningless*, not merely absent.
+    for key in sorted(available):
+        for col in LABEL_COLUMNS.get(key, ()):
+            try:
+                rows = con.execute(
+                    f"""
+                    SELECT an, count(*) AS n,
+                           count(*) FILTER (
+                               WHERE {col} IS NOT NULL
+                                 AND regexp_matches({col}, '{NUMERIC_LABEL_RE}')
+                           ) AS numerice
+                    FROM {key} GROUP BY an HAVING numerice > 0 ORDER BY an
+                    """
+                ).fetch_arrow_table().to_pylist()
+            except duckdb.Error as exc:
+                log.warning("label check failed for %s.%s: %s", key, col, exc)
+                continue
+            known = KNOWN_LABEL_DEFECTS.get((key, col), ())
+            for row in rows:
+                rate = row["numerice"] / row["n"]
+                bucket = expected if row["an"] in known else problems
+                bucket.append(
+                    {
+                        "table": key,
+                        "column": col,
+                        "an": row["an"],
+                        "kind": "label_numeric",
+                        "numeric_rate": round(rate, 4),
+                        "rows": row["numerice"],
+                        "detail": (
+                            f"{row['numerice']:,} of {row['n']:,} values in {key}.{col} "
+                            f"are numbers, not labels. A populated column is not "
+                            f"necessarily a meaningful one; publish.py repairs this "
+                            f"from years where the same code carries a real name."
+                        ),
+                    }
+                )
 
     con.close()
     return {

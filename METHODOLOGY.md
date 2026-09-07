@@ -242,6 +242,35 @@ The general rule this project takes from it: **an indicator must be tested again
 data before its legal basis is written down.** A provision that reads perfectly can
 still have no computable counterpart in the available fields.
 
+### A populated column is not a meaningful one
+
+Every data defect found in this project until now was an *absence*: an unmatched alias
+gives a column of NULLs, a renamed resource loses a year. `validate` was built around
+that shape, comparing each column's null rate against its own history.
+
+It cannot see a column that is full of the wrong thing.
+
+The exports before 2021 wrote the internal `CPV_CODE_ID` into the CPV **name** column,
+so `39831240` read `15113` instead of *Produse de curatenie*. That is **14,074,968 rows,
+56% of every labelled row in the archive**, and 100% of 2016 through 2020. It passed
+every validation pass and reached the published site, where a quarter of the CPV table
+showed a number where the product name belongs — anyone searching "detergent" for those
+years found nothing.
+
+Two things came out of it:
+
+- **The archive repairs itself.** The same code carries a proper label from 2021
+  onwards, so no external vocabulary is needed. 8,572 codes recover a name; 510 never
+  do, and those are published NULL rather than filled with a guess.
+- **`validate` now checks label columns for being meaningless, not merely absent.** The
+  known-defect years are declared, so the check stays useful: a permanently failing
+  validation teaches everyone to ignore it, and only a *new* year appearing is worth an
+  alarm.
+
+One detail is worth recording because it nearly halved the fix. Matching `^[0-9]+$`
+finds 7.4M rows and misses every value written `11728.0` — precisely half the problem,
+while looking like a fix that worked. The pattern must allow a decimal part.
+
 ### Ambiguous brand tokens
 
 Brand matching is word-boundary exact, but several real brands are spelled like ordinary
