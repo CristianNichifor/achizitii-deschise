@@ -332,12 +332,17 @@ DIVIZARE_01 = Indicator(
     ),
     applies_to=("achizitii_directe",),
     sql="""
-    WITH d AS (
-      SELECT autoritate, autoritate_cui, cpv, furnizor, furnizor_cui, nr_achizitie,
-             TRY_CAST(valoare_ron AS DOUBLE) v,
-             data_publicare_ts t
-      FROM achizitii_directe
-      WHERE valoare_ron IS NOT NULL AND cpv IS NOT NULL AND furnizor IS NOT NULL
+    WITH praguri(an, prag) AS (VALUES {PRAGURI}),
+    d AS (
+      SELECT a.autoritate, a.autoritate_cui, a.cpv, a.furnizor, a.furnizor_cui,
+             a.nr_achizitie, TRY_CAST(a.valoare_ron AS DOUBLE) v, a.data_publicare_ts t
+      FROM achizitii_directe a JOIN praguri p ON p.an = a.an
+      WHERE a.valoare_ron IS NOT NULL AND a.cpv IS NOT NULL AND a.furnizor IS NOT NULL
+        -- A direct acquisition cannot lawfully exceed the ceiling, so a value above it
+        -- is a source error, not a purchase. They are rare (0.01-0.03% of rows) but
+        -- dominate any sum: five such rows produced a 114.7M RON "cluster" for an
+        -- authority whose five purchases cannot lawfully exceed 1.35M between them.
+        AND TRY_CAST(a.valoare_ron AS DOUBLE) BETWEEN 0 AND p.prag
     ),
     g AS (
       SELECT autoritate_cui, any_value(autoritate) autoritate, cpv, furnizor,
@@ -378,10 +383,15 @@ DEPENDENTA_01 = Indicator(
     ),
     applies_to=("achizitii_directe",),
     sql="""
-    WITH d AS (
-      SELECT autoritate_cui, any_value(autoritate) OVER (PARTITION BY autoritate_cui) aut,
-             furnizor, furnizor_cui, TRY_CAST(valoare_ron AS DOUBLE) v
-      FROM achizitii_directe WHERE valoare_ron IS NOT NULL
+    WITH praguri(an, prag) AS (VALUES {PRAGURI}),
+    d AS (
+      SELECT a.autoritate_cui,
+             any_value(a.autoritate) OVER (PARTITION BY a.autoritate_cui) aut,
+             a.furnizor, a.furnizor_cui, TRY_CAST(a.valoare_ron AS DOUBLE) v
+      FROM achizitii_directe a JOIN praguri p ON p.an = a.an
+      WHERE a.valoare_ron IS NOT NULL
+        -- Same guard: budget shares are sums, and one impossible row rewrites them.
+        AND TRY_CAST(a.valoare_ron AS DOUBLE) BETWEEN 0 AND p.prag
     ),
     total AS (
       SELECT autoritate_cui, any_value(aut) autoritate, sum(v) buget, count(*) n_total
