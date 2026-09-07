@@ -1,0 +1,132 @@
+name: backfill unit prices
+
+# Collects a range of past days from SEAP, unattended, on GitHub's infrastructure.
+#
+# WHY THIS EXISTS
+#
+# The bulk data.gov.ro exports are published quarterly — the newest 2026 resource is
+# T II (April-June), released 13 July — so the archive ends on 2026-06-30 and everything
+# since is invisible. Only the live API carries those days, and only it carries line
+# items at all.
+#
+# It also runs where a laptop does not have to stay open. The daily job proved GitHub
+# runners reach SEAP normally: a dispatch for 2026-07-05 returned 90 acquisitions and
+# 123 line items with HTTP 200 throughout, from a different address than the one that
+# got restricted.
+#
+# COST
+#
+# At the deliberately modest 4 rps / 2 workers, a weekday of ~8,300 acquisitions takes
+# roughly 17 minutes; a weekend day takes seconds. Fifty weekdays is about 850 of the
+# 2,000 free minutes a month, so a quarter is affordable but not free — run it in
+# chunks and watch the budget rather than firing the whole gap at once.
+#
+# RESUMABILITY
+#
+# Every day is committed as it completes, and `archived_ids()` makes a re-run skip what
+# is already stored. A job that hits the six-hour limit therefore loses nothing: dispatch
+# it again with the same range and it carries on from where it stopped.
+
+on:
+  workflow_dispatch:
+    inputs:
+      start:
+        description: "First day (YYYY-MM-DD)"
+        required: true
+      end:
+        description: "Last day (YYYY-MM-DD)"
+        required: true
+      budget_minutes:
+        description: "Stop cleanly after this many minutes (default 300, max job is 360)"
+        required: false
+        default: "300"
+
+concurrency:
+  group: ingest-seap
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # A shallow clone cannot be rebased onto a moved main, and this job pushes
+          # once per day collected.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -e ".[dev]"
+
+      - name: Collect, one day at a time
+        env:
+          START: ${{ inputs.start }}
+          END: ${{ inputs.end }}
+          BUDGET: ${{ inputs.budget_minutes }}
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          deadline=$(( $(date +%s) + BUDGET * 60 ))
+          day="$START"
+          collected=0
+
+          while [ "$(date -d "$day" +%s)" -le "$(date -d "$END" +%s)" ]; do
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "::notice::budget reached; stopping cleanly at $day"
+              echo "Re-run with start=$day end=$END to continue." >> "$GITHUB_STEP_SUMMARY"
+              break
+            fi
+
+            echo "::group::$day"
+            # One failing day must not abandon the rest of the range.
+            if achizitii seap --start "$day" --end "$day"; then
+              achizitii publish --only preturi
+              git add site/data
+              if ! git diff --cached --quiet; then
+                git commit -q -m "data: unit prices for $day"
+                for attempt in 1 2 3; do
+                  git pull --rebase --autostash origin main && git push && break
+                  echo "push attempt $attempt failed"; sleep 5
+                done
+                collected=$((collected + 1))
+              else
+                echo "nothing new for $day"
+              fi
+            else
+              echo "::warning::$day failed; continuing with the rest of the range"
+            fi
+            echo "::endgroup::"
+
+            day=$(date -d "$day + 1 day" +%F)
+          done
+
+          echo "Collected $collected new day(s)." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report what the archive now holds
+        if: always()
+        run: |
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import pathlib
+          import duckdb
+          files = sorted(pathlib.Path("site/data/preturi").rglob("*.parquet"))
+          if not files:
+              print("Archive is empty.")
+              raise SystemExit(0)
+          con = duckdb.connect()
+          rows, first, last = con.execute(
+              "SELECT count(*), min(CAST(data_finalizare AS DATE)),"
+              " max(CAST(data_finalizare AS DATE))"
+              f" FROM read_parquet({[str(f) for f in files]})"
+          ).fetchone()
+          print(f"\n**Archive:** {len(files)} days, {rows:,} line items, {first} to {last}.")
+          PY
