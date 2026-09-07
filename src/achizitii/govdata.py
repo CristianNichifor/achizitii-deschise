@@ -391,12 +391,15 @@ KNOWN_COLUMN_GAPS: dict[tuple[str, str], tuple[dict[str, Any], ...]] = {
         {
             "years": range(2023, 2027),
             "reason": (
-                "The estimate stops being carried on the contract row from 2023, not "
-                "2022 as first recorded here: 2022 is 40.6% null, so roughly three in "
-                "five contracts that year still carry it and estimare-01 yields 5,596 "
-                "findings for 2022. From 2023 the column is 100% null and the estimate "
-                "must come from the initiation notice, which reintroduces the framework "
-                "double-counting problem."
+                "The estimate stops being carried on the contract row from 2023. An "
+                "earlier note here recorded 2022 as 40.6% null and reasoned about why "
+                "the source might have dropped it mid-year; that was wrong. The "
+                "nulls were ours — one quarter heads the column VALOARE_ESTIMATA_RON "
+                "and it was not mapped. With the alias added, 2022 is 99.7% populated "
+                "and estimare-01 rises from 24,543 findings to 42,631. From 2023 the "
+                "column really is absent, and the estimate must come from the "
+                "initiation notice, which reintroduces the framework double-counting "
+                "problem."
             ),
         },
     ),
