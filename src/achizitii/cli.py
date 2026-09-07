@@ -7,6 +7,7 @@ import json
 import logging
 import sys
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 # SEAP publication and finalization dates are Romanian local time. Deriving "yesterday"
@@ -97,6 +98,15 @@ def main(argv: list[str] | None = None) -> int:
                      help="evaluate rule validity as of this date")
     ind.add_argument("--list", action="store_true", help="list indicators and exit")
 
+    # -- publish -------------------------------------------------------------------
+    pub = sub.add_parser(
+        "publish", help="build the browser-queryable bundle served from GitHub Pages"
+    )
+    pub.add_argument(
+        "--out", type=Path, default=None,
+        help="output directory (default: site/data)",
+    )
+
     args = parser.parse_args(argv)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
@@ -167,6 +177,13 @@ def main(argv: list[str] | None = None) -> int:
         _emit(result)
         # Unavailability is an expected outcome for a free experimental endpoint, not a
         # pipeline failure — nothing downstream depends on it.
+        return 0
+
+    if args.command == "publish":
+        from .publish import build
+
+        manifest = build(args.out)
+        _emit(manifest)
         return 0
 
     if args.command == "indicators":

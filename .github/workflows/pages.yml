@@ -1,0 +1,71 @@
+name: pages
+
+# Publishes site/ to GitHub Pages.
+#
+# The bundle under site/data is NOT built here. data.gov.ro is unreachable from GitHub
+# and Azure IP ranges — four 60-second connect timeouts against 0.93s from a local
+# machine — which is also why bulk.yml has no schedule. So the source data cannot be
+# fetched in CI, and the bundle is generated locally with `achizitii publish` and
+# committed. See docs/sources.md.
+#
+# If that ever changes, this workflow gains a build step and the bundle leaves git.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never cancel a half-finished deploy; let it complete and queue the next.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Deploying an empty shell is worse than not deploying: the page would load,
+      # report a missing manifest, and look like a site that is merely broken.
+      - name: Verify the bundle is present
+        run: |
+          if [ ! -f site/data/manifest.json ]; then
+            echo "::error::site/data/manifest.json is missing."
+            echo "Run 'achizitii publish' locally and commit site/data/."
+            exit 1
+          fi
+          python3 - <<'PY'
+          import json, pathlib, sys
+          m = json.loads(pathlib.Path("site/data/manifest.json").read_text())
+          missing = [
+              d["file"] for d in m.get("datasets", []) + m.get("indicatori", [])
+              if not pathlib.Path("site/data", d["file"]).is_file()
+          ]
+          if missing:
+              sys.exit(f"::error::manifest lists files that are not present: {missing}")
+          total = sum(p.stat().st_size for p in pathlib.Path("site").rglob("*") if p.is_file())
+          print(f"bundle OK: {len(m.get('datasets', []))} datasets, "
+                f"{len(m.get('indicatori', []))} indicators, {total/1e6:.1f} MB")
+          # GitHub Pages refuses sites over 1 GB; fail early with a clear reason.
+          if total > 900_000_000:
+              sys.exit(f"::error::site is {total/1e6:.0f} MB, too close to the 1 GB Pages limit")
+          PY
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4
