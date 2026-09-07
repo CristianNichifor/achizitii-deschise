@@ -15,6 +15,8 @@ data/marts/
 data/gov_raw/
 data/gov/
 data/findings/
+data/ruti_raw/
+data/ruti/
 *.parquet
 *.jsonl
 *.jsonl.gz
