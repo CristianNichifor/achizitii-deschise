@@ -252,3 +252,32 @@ def test_published_contracts_suppress_framework_totals() -> None:
             assert total is None, "a framework ceiling was published as a total"
         else:
             assert total is not None
+
+
+def test_county_view_requires_both_sides() -> None:
+    """A county comparison needs the buyer's county as well as the supplier's.
+
+    Neither is in the exports: supplier locality is missing on 77% of rows and the
+    buyer's county is never given. Both come from the ANAF profile cache, so the join
+    must be on two sides — a single-sided join would silently compare a supplier county
+    against nothing.
+    """
+    from achizitii.publish import GEO_VIEW
+
+    assert GEO_VIEW.count("JOIN firme_geo") == 2
+    assert "judet_autoritate" in GEO_VIEW and "judet_furnizor" in GEO_VIEW
+
+
+def test_county_dataset_is_descriptive_not_an_indicator() -> None:
+    """Buying locally is lawful, and the published table must not imply otherwise.
+
+    It carries counts and values, no threshold and no flag. If this ever grows a column
+    that scores or ranks counties, it needs a legal basis first — like every indicator.
+    """
+    from achizitii.publish import DATASETS
+
+    judete = next(d for d in DATASETS if d.name == "judete_an")
+    lowered = judete.sql.lower()
+    for word in ("suspect", "risc", "alert", "incalcare", "flag"):
+        assert word not in lowered, f"{word!r} implies a judgement this data cannot support"
+    assert "pct_local" in judete.sql and "n_local" in judete.sql

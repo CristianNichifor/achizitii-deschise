@@ -209,6 +209,23 @@ def ceilings_by_category_sql() -> str:
     return ", ".join(rows)
 
 
+
+# Buyer and supplier county, joined through the ANAF profile cache. The exports say
+# where neither party is: supplier locality is missing on 77% of rows and the buyer's
+# county is never given at all. With both sides enriched, 97.9% of the archive can be
+# placed geographically.
+GEO_VIEW = """
+CREATE OR REPLACE VIEW geo AS
+SELECT ad.an,
+       fa.judet AS judet_autoritate,
+       ff.judet AS judet_furnizor,
+       ad.v,
+       ad.plauzibil
+FROM ad
+JOIN firme_geo fa ON fa.cui = ltrim(regexp_replace(ad.autoritate_cui, '[^0-9]', '', 'g'), '0')
+JOIN firme_geo ff ON ff.cui = ltrim(regexp_replace(ad.furnizor_cui, '[^0-9]', '', 'g'), '0')
+"""
+
 DATASETS = (
     Dataset(
         name="sumar_an",
@@ -281,6 +298,30 @@ DATASETS = (
         WHERE v IS NOT NULL AND v > 0
         GROUP BY 1, 2
         ORDER BY 1, 2
+        """,
+    ),
+    Dataset(
+        name="judete_an",
+        description=(
+            "Where the money goes geographically: per year and buyer county, how many "
+            "awards and how much value stayed with a supplier registered in the same "
+            "county. Descriptive, not an indicator — buying locally is lawful and often "
+            "sensible."
+        ),
+        sql="""
+        SELECT an,
+               judet_autoritate,
+               count(*)                                          AS n,
+               count(*) FILTER (WHERE judet_autoritate = judet_furnizor) AS n_local,
+               round(100.0 * count(*) FILTER (WHERE judet_autoritate = judet_furnizor)
+                     / count(*), 1)                              AS pct_local,
+               round(sum(v) FILTER (WHERE plauzibil), 2)         AS valoare_totala_ron,
+               round(sum(v) FILTER (WHERE plauzibil AND judet_autoritate = judet_furnizor), 2)
+                                                                 AS valoare_locala_ron,
+               count(DISTINCT judet_furnizor)                    AS judete_furnizoare
+        FROM geo
+        GROUP BY 1, 2
+        ORDER BY 1 DESC, n DESC
         """,
     ),
     Dataset(
@@ -541,7 +582,18 @@ def build(out_dir: Path | None = None, *, only: str | None = None) -> dict[str, 
             )
         )
         con.execute(CPV_LABELS_VIEW)
-        manifest["datasets"] = [_write(con, d, out) for d in DATASETS]
+        firme_cache = Path(ROOT) / "data" / "firme" / "anaf.parquet"
+        if firme_cache.is_file():
+            con.execute(
+                "CREATE OR REPLACE VIEW firme_geo AS SELECT cui, judet FROM "
+                f"read_parquet('{firme_cache}') WHERE judet IS NOT NULL"
+            )
+            con.execute(GEO_VIEW)
+        buildable = [
+            d for d in DATASETS
+            if d.name != "judete_an" or firme_cache.is_file()
+        ]
+        manifest["datasets"] = [_write(con, d, out) for d in buildable]
 
     # Unit prices: the archive is append-only and starts the day collection began, so it
     # is normal for this to be empty on a fresh checkout. An absent section is honest;
