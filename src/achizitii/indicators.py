@@ -44,22 +44,37 @@ from typing import Any
 # against observed data, not merely quoted somewhere.
 THRESHOLDS: list[dict[str, Any]] = [
     {
-        "from": date(2023, 1, 1),
+        "from": date(2022, 1, 1),
         "to": None,
         "goods_services": 270_120.0,
         "works": 900_400.0,
         "verified": True,
         "source": (
-            "Both confirmed against H1 2026 data (1,053,138 goods/services records). "
-            "Goods/services: 1,445 in (260,000, 270,120] against 21 above it; only "
-            "0.035% of all records exceed the ceiling, and sampled exceedances are "
-            "misclassifications (e.g. road maintenance works booked as 'Servicii', "
-            "which carries the higher works ceiling). "
-            "Works: 197 in (890,000, 900,000], 20 in (900,000, 900,400], and ZERO in "
-            "(900,400, 910,000] — which excludes 900,000 and pins 900,400."
+            "Confirmed by DENSITY, not by exceedance. Values per 5,000 lei band for "
+            "goods/services in 2025 climb to 1,449 at 265,000 and 1,114 at 270,000, "
+            "then collapse to 15 at 275,000. The same shape holds from 2022 onward and "
+            "the largest value at or below the figure is exactly 270,120.00 in every "
+            "year from 2022. Works: 20 records in (900,000, 900,400] and ZERO in "
+            "(900,400, 910,000], which excludes 900,000 and pins 900,400."
+        ),
+    },
+    {
+        "from": date(2016, 1, 1),
+        "to": date(2021, 12, 31),
+        "goods_services": 135_060.0,
+        # Not established for this period; the works ceiling is not asserted.
+        "works": None,
+        "verified": True,
+        "source": (
+            "The ceiling before 2022 is roughly half the later one. Density collapses "
+            "immediately above the 135,000 band — 2016 runs 1,037 then 75, 30, 31, and "
+            "2019 runs 3,346 then 869, 53, 42 — with almost nothing between 140,000 and "
+            "270,000. From 2022 that gap fills in and terminal bunching moves to "
+            "265,000-270,000, which is the change of ceiling made visible."
         ),
     },
 ]
+
 
 
 def threshold_for(day: date, category: str) -> float | None:
@@ -107,6 +122,16 @@ def corroborate_ceiling_sql(category: str = "goods_services") -> str:
     A ceiling is corroborated when exceedances are a rounding error. Some are expected:
     misclassified works carry a higher ceiling and legitimately appear above the
     goods/services figure.
+
+    THIS TEST IS ONE-SIDED, and an earlier version of this project over-claimed on it.
+    Few values above X shows only that the ceiling is at most X — never that it IS X.
+    Testing 270,120 against 2016 returns a 0.025% exceedance and looks like
+    confirmation, when the ceiling that year was actually about half that: values
+    cannot exceed 270,120 if they cannot exceed 135,060 either.
+
+    Confirming a ceiling needs the density profile as well: mass must accumulate just
+    below the figure and collapse just above it. That is what distinguishes the real
+    ceiling from any number larger than it.
     """
     types = (
         "('lucrari')" if category == "works" else "('furnizare','servicii')"
@@ -173,6 +198,29 @@ def detect_ceiling_sql(window: float = CEILING_WINDOW) -> str:
     """
 
 
+
+def thresholds_values_sql(category: str = "goods_services") -> str:
+    """A VALUES list of (year, ceiling) for every year with an established ceiling.
+
+    The ceiling doubled in 2022, so a single figure applied across the archive is
+    wrong for six of the eleven years — it would look for bunching at 270,120 in
+    2016, where nothing can exceed 135,060 in the first place.
+    """
+    key = "works" if category == "works" else "goods_services"
+    rows = []
+    for year in range(2016, 2027):
+        for row in THRESHOLDS:
+            if not row["verified"] or date(year, 7, 1) < row["from"]:
+                continue
+            if row["to"] and date(year, 7, 1) > row["to"]:
+                continue
+            value = row.get(key)
+            if value:
+                rows.append(f"({year}, {value})")
+            break
+    return ", ".join(rows)
+
+
 # ------------------------------------------------------------------------ rule type
 
 @dataclass(frozen=True)
@@ -223,26 +271,20 @@ PRAG_01 = Indicator(
     ),
     applies_to=("achizitii_directe",),
     sql="""
-    WITH d AS (
-      SELECT TRY_CAST(valoare_ron AS DOUBLE) v, tip_contract, autoritate, autoritate_cui,
-             furnizor, nr_achizitie, data_publicare
-      FROM achizitii_directe
-      WHERE categorie IN ('furnizare','servicii')
-    ),
-    banda AS (
-      SELECT *, floor(v / 10000) * 10000 AS banda FROM d
-      WHERE v BETWEEN $prag * 0.6 AND $prag
-    ),
-    densitate AS (SELECT banda, count(*) n FROM banda GROUP BY 1),
-    baza AS (SELECT median(n) mediana FROM densitate WHERE banda < $prag - 20000)
-    SELECT 'prag-01' AS indicator,
-           b.autoritate, b.autoritate_cui, b.furnizor, b.nr_achizitie, b.data_publicare,
-           b.v AS valoare_ron,
-           round(100.0 * b.v / $prag, 2) AS pct_din_plafon,
-           (SELECT mediana FROM baza) AS densitate_de_referinta
-    FROM banda b
-    WHERE b.v >= $prag * 0.98
-    ORDER BY b.v DESC
+    WITH praguri(an, prag) AS (VALUES {PRAGURI}),
+    d AS (
+      SELECT a.an, TRY_CAST(a.valoare_ron AS DOUBLE) v, a.autoritate, a.autoritate_cui,
+             a.furnizor, a.nr_achizitie, a.data_publicare, p.prag
+      FROM achizitii_directe a JOIN praguri p ON p.an = a.an
+      WHERE a.categorie IN ('furnizare','servicii')
+    )
+    SELECT 'prag-01' AS indicator, an,
+           autoritate, autoritate_cui, furnizor, nr_achizitie, data_publicare,
+           v AS valoare_ron, prag AS plafon_aplicabil,
+           round(100.0 * v / prag, 2) AS pct_din_plafon
+    FROM d
+    WHERE v >= prag * 0.98 AND v <= prag
+    ORDER BY v DESC
     """,
 )
 
@@ -293,7 +335,7 @@ DIVIZARE_01 = Indicator(
     WITH d AS (
       SELECT autoritate, autoritate_cui, cpv, furnizor, furnizor_cui, nr_achizitie,
              TRY_CAST(valoare_ron AS DOUBLE) v,
-             TRY_CAST(data_publicare AS TIMESTAMP) t
+             data_publicare_ts t
       FROM achizitii_directe
       WHERE valoare_ron IS NOT NULL AND cpv IS NOT NULL AND furnizor IS NOT NULL
     ),

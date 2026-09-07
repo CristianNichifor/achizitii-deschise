@@ -74,9 +74,22 @@ class TestThresholds:
     def test_unknown_category_falls_back_to_goods_services(self) -> None:
         assert threshold_for(date(2026, 1, 1), "produse") == 270_120.0
 
-    def test_unverified_period_returns_none(self) -> None:
-        """A wrong threshold invents findings — refusing to answer is the safe failure."""
-        assert threshold_for(date(2018, 1, 1), "goods_services") is None
+    def test_pre_2022_ceiling_is_established(self) -> None:
+        """The ceiling was roughly half its later value before 2022.
+
+        Density collapses immediately above the 135,000 band and almost nothing sits
+        between 140,000 and 270,000; from 2022 that gap fills in.
+        """
+        assert threshold_for(date(2018, 1, 1), "goods_services") == 135_060.0
+        assert threshold_for(date(2021, 12, 31), "goods_services") == 135_060.0
+        assert threshold_for(date(2022, 1, 1), "goods_services") == 270_120.0
+
+    def test_unestablished_value_returns_none(self) -> None:
+        """A wrong threshold invents findings — refusing to answer is the safe failure.
+
+        The works ceiling before 2022 was never established, so it stays absent.
+        """
+        assert threshold_for(date(2018, 1, 1), "works") is None
 
     def test_all_declared_thresholds_carry_a_verified_flag(self) -> None:
         for row in THRESHOLDS:
