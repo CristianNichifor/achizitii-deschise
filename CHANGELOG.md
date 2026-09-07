@@ -6,6 +6,18 @@ Corrections to published data are recorded here, as committed to in
 A correction is applied to the pipeline rather than to the published file, so that it
 survives regeneration; the entry below names the commit that fixed it.
 
+## 2026-09-07 — contracts published
+
+- **Added** `contracte_an`: 3.6M contracts, split by nature. Framework agreements carry a
+  count and a median but **no total** — the ceiling is repeated on every supplier's row,
+  so summing multiplies it by the number of suppliers and double-counts the call-offs
+  beneath it.
+- **Added** extreme-value disclosure for contracts: 301 rows (0.076%) carry 40% of the
+  ordinary-contract total, so the total, the total excluding values above 1 bn RON, and
+  the count are published together.
+- **Fixed**: 26 repeated header rows had been ingested as data, producing a contracting
+  authority named "Autoritate contractanta" on the published site.
+
 ## 2026-09-07 — inflation adjustment, and a trillion-lei correction
 
 - **Added**: figures can be expressed in any year's money. The Eurostat HICP index is
