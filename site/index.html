@@ -7,12 +7,12 @@
 <style>
   :root {
     --ink: #101418; --muted: #5c6672; --paper: #fff; --sub: #f4f6f8;
-    --line: #dfe4e9; --accent: #1a56b8; --warn: #b45309;
+    --line: #dfe4e9; --accent: #123a6b; --accent-soft: #eef3fa; --warn: #b45309;
     --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
   }
   @media (prefers-color-scheme: dark) {
     :root { --ink:#e8ecf1; --muted:#95a1af; --paper:#0e1216; --sub:#161c23;
-            --line:#252d36; --accent:#6ea8fe; --warn:#f0b429; }
+            --line:#252d36; --accent:#7ea9dd; --accent-soft:#16202c; --warn:#f0b429; }
   }
   * { box-sizing: border-box; }
   body { margin:0; padding:2rem 1.25rem 4rem; background:var(--paper); color:var(--ink);
@@ -32,8 +32,23 @@
           color:var(--muted); margin-bottom:.25rem; }
   select, input, button { font:inherit; padding:.45rem .6rem; border:1px solid var(--line);
           border-radius:6px; background:var(--paper); color:var(--ink); }
+  .hero { display:flex; gap:.5rem; margin:0 0 .4rem; }
+  .hero input { flex:1; padding:.7rem .9rem; font-size:1rem; }
+  .hero button { padding:.7rem 1.4rem; font-size:1rem; background:var(--accent);
+                 color:#fff; border-color:transparent; cursor:pointer; font-weight:600; }
+  .hero button:disabled { opacity:.5; cursor:progress; }
+  .hint { color:var(--muted); font-size:.82rem; margin:0 0 1.2rem; min-height:1em; }
+  .subnav { display:flex; align-items:center; gap:.6rem; margin:-.4rem 0 1rem;
+            font-size:.85rem; flex-wrap:wrap; }
+  /* The hidden attribute does not beat display:flex — without this the signal
+     picker stayed visible on every tab. */
+  .subnav[hidden] { display:none; }
+  .subnav select { max-width:100%; }
+  .subnav label { margin:0; }
+  .subnav #semnal-temei { color:var(--muted); font-size:.78rem; }
   #run { background:var(--accent); color:#fff; border-color:transparent; cursor:pointer; font-weight:500; }
   #run:disabled { opacity:.5; cursor:progress; }
+  .tabs button[aria-selected="true"] { font-weight:600; }
   #status { color:var(--muted); font-size:.85rem; margin:.75rem 0; }
   #note { font-size:.85rem; margin:.35rem 0 .75rem; color:var(--warn); }
   .wrap { overflow-x:auto; border:1px solid var(--line); border-radius:8px; }
@@ -55,18 +70,29 @@
 <body>
 <main>
   <h1>Achiziții publice din România</h1>
-  <p class="sub">26,6 milioane de achiziții directe, 2016–2026. Datele se interoghează
-     direct în browser, cu DuckDB-Wasm peste fișiere Parquet — nu există niciun server.</p>
+  <p class="sub" id="scale">Date deschise despre banii cheltuiți de instituțiile publice.</p>
+
+  <form class="hero" id="hero" onsubmit="return false">
+    <input id="q" autocomplete="off"
+           placeholder="Caută o autoritate, o firmă, un CUI sau un produs…">
+    <button id="run" disabled>Caută</button>
+  </form>
+  <p class="hint" id="hint"></p>
 
   <div class="banner">
     <strong>Cifrele arată tipare, nu concluzii.</strong> Un total mare sau o poziție
     dominantă a unui furnizor pot avea explicații perfect legale. Sumele sunt nominale,
-    fără ajustare la inflație, deci creșterile recente sunt supraevaluate.
-    Vezi <a href="https://github.com/CristianNichifor/achizitii-deschise/blob/main/METHODOLOGY.md">METHODOLOGY.md</a>
+    fără ajustare la inflație, dacă nu alegeți un an de referință.
+    Vezi <a href="https://github.com/CristianNichifor/achizitii-deschise/blob/main/METHODOLOGY.md">metodologia</a>
     și <a href="https://github.com/CristianNichifor/achizitii-deschise/blob/main/CORRECTIONS.md">dreptul la replică</a>.
   </div>
 
-  <div class="tabs" id="tabs" role="tablist"></div>
+  <nav class="tabs" id="tabs" role="tablist"></nav>
+  <div class="subnav" id="subnav" hidden>
+    <label for="semnal">Semnal</label>
+    <select id="semnal"></select>
+    <span id="semnal-temei"></span>
+  </div>
 
   <div class="controls">
     <div>
@@ -78,14 +104,9 @@
       <select id="baza"><option value="">— sume nominale —</option></select>
     </div>
     <div>
-      <label for="q" id="qlabel">Caută</label>
-      <input id="q" placeholder="denumire sau CUI…" size="26">
-    </div>
-    <div>
       <label for="minn">n minim</label>
       <input id="minn" type="number" value="1" min="1" size="4">
     </div>
-    <button id="run" disabled>Rulează</button>
   </div>
 
   <p id="status">Se încarcă DuckDB-Wasm…</p>
@@ -114,6 +135,39 @@ const status = (m) => { $('status').textContent = m; };
 const url = (f) => new URL(`data/${f}`, location.href).href;
 const lit = (s) => `'${String(s).replace(/'/g, "''")}'`;
 
+// Column names come from the Parquet schema, which is written for SQL, not for reading.
+// "n_valori_folosite" and "n_excluse_peste_plafon" are precise and unreadable; a person
+// looking at a table should not need the methodology open to parse the header.
+const LABELS = {
+  an: 'an', categorie: 'categorie', n: 'achiziții', judet: 'județ',
+  n_valori_folosite: 'valori folosite', valoare_totala_ron: 'valoare totală (RON)',
+  mediana_ron: 'mediană (RON)', p10_ron: 'percentila 10 (RON)',
+  p90_ron: 'percentila 90 (RON)', n_excluse_peste_plafon: 'excluse peste plafon',
+  cpv: 'cod CPV', cpv_denumire: 'denumire CPV',
+  autoritate: 'autoritate contractantă', autoritate_cui: 'CUI autoritate',
+  furnizor: 'furnizor', furnizor_cui: 'CUI furnizor', furnizor_anaf: 'denumire ANAF',
+  furnizori_distincti: 'furnizori distincți', autoritati_distincte: 'autorități distincte',
+  denumire_key: 'produs', um: 'unitate', marime_pachet: 'mărime pachet',
+  autoritati: 'autorități', furnizori: 'furnizori', coduri: 'coduri CPV',
+  cpv_principal: 'CPV principal', din: 'din', pana_la: 'până la',
+  judet_autoritate: 'județul autorității', judet_furnizor: 'județul furnizorului',
+  n_local: 'din același județ', pct_local: '% local',
+  valoare_locala_ron: 'valoare locală (RON)', judete_furnizoare: 'județe furnizoare',
+  natura: 'natură', valoare_fara_extreme_ron: 'valoare fără extreme (RON)',
+  n_peste_prag_extrem: 'peste 1 mld', maxim_ron: 'maxim (RON)',
+  data_inregistrare: 'înregistrată la', inactiv: 'inactivă fiscal',
+  data_inactivare: 'inactivă din', data_reactivare: 'reactivată la',
+  data_radiere: 'radiată la', platitor_tva: 'plătitor TVA',
+  denumire: 'denumire', stare: 'stare', stare_de_la: 'stare din',
+  data_achizitie: 'data achiziției', zile_dupa: 'zile după', valoare_ron: 'valoare (RON)',
+  data_intalnirii: 'data întâlnirii', decident: 'decident', functie: 'funcție',
+  institutie: 'instituție', titlu: 'titlu', locul_intalnirii: 'loc', concluzii: 'concluzii',
+  anulat: 'anulată', indicator: 'semnal', nr_contract: 'nr. contract',
+  valoare_estimata_ron: 'valoare estimată (RON)', pct_din_estimare: '% din estimare',
+  numar_oferte: 'nr. oferte', tip_procedura: 'procedură',
+};
+const label = (c) => LABELS[c] || c.replace(/_/g, ' ');
+
 // Every view names the columns it selects rather than using *, so a schema change
 // upstream surfaces as an error here instead of silently reshaping the page.
 const VIEWS = {
@@ -122,7 +176,7 @@ const VIEWS = {
     search: null,
     money: ['valoare_totala_ron', 'mediana_ron'],
     note: 'Totalurile exclud valorile peste plafonul legal al anului — coloana ' +
-          'n_excluse_peste_plafon arată câte.',
+          '„excluse peste plafon" arată câte.',
     sql: (f) => `
       SELECT an, categorie, n, n_valori_folosite,
              round(valoare_totala_ron)  AS valoare_totala_ron,
@@ -341,7 +395,8 @@ function render(table) {
     table.schema.fields.filter((f) => /Date|Timestamp/.test(f.type.toString())).map((f) => f.name),
   );
   head.insertRow().append(...cols.map((c) => {
-    const th = document.createElement('th'); th.textContent = c; return th;
+    const th = document.createElement('th'); th.textContent = label(c);
+    th.title = c; return th;
   }));
   for (const row of table.toArray()) {
     const tr = body.insertRow();
@@ -381,15 +436,24 @@ function selectTab(key, ind) {
   current = key;
   indicator = ind || null;
   for (const b of $('tabs').children) b.setAttribute('aria-selected', String(b.dataset.key === key));
-  const search = key === 'indicatori' ? null : VIEWS[key].search;
-  $('q').style.display = search ? '' : 'none';
-  $('qlabel').style.display = search ? '' : 'none';
-  if (search) $('qlabel').textContent = search;
   // Only the year-keyed views can be deflated; the price archive and the meetings
   // register are not organised by year.
   $('wrap-baza').style.display = VIEWS[key] && VIEWS[key].money ? '' : 'none';
   $('minn').parentElement.style.display =
     (key === 'indicatori' || key === 'ruti' || key === 'firme') ? 'none' : '';
+  const search = key === 'indicatori' ? null : VIEWS[key].search;
+  $('q').placeholder = search
+    ? `Caută după ${search}…`
+    : 'Caută o autoritate, o firmă sau un CUI…';
+  $('hint').textContent = search
+    ? ''
+    : 'Acest tabel nu se filtrează după text; o căutare vă duce la Autorități.';
+  $('subnav').hidden = key !== 'indicatori';
+  if (key === 'indicatori' && indicator) {
+    const opt = [...$('semnal').options].find((o) => o.value === indicator.id);
+    if (opt) $('semnal').value = indicator.id;
+    $('semnal-temei').textContent = indicator.temei || '';
+  }
   const yearless = key === 'preturi' || key === 'ruti' || key === 'firme'
     || (key === 'indicatori' && !(indicator.columns || []).includes('an'));
   $('an').parentElement.style.display = yearless ? 'none' : '';
@@ -401,8 +465,8 @@ function selectTab(key, ind) {
     return;
   }
   $('note').textContent = key === 'indicatori'
-    ? 'Fiecare rând înseamnă „merită verificat”, niciodată „este ilegal”. Temeiul legal ' +
-      'și explicațiile inocente sunt în METHODOLOGY.md.'
+    ? ((indicator && indicator.descriere ? indicator.descriere + ' ' : '') +
+       'Fiecare rând înseamnă „merită verificat”, niciodată „este ilegal”.')
       + (yearless ? ' Acest indicator agregă pe toți anii, deci nu are filtru de an.' : '')
     : VIEWS[key].note;
   run();
@@ -426,30 +490,49 @@ function selectTab(key, ind) {
     o.value = an; o.textContent = an;
     $('an').append(o);
   }
-  $('meta').textContent =
-    `${(manifest.acoperire?.achizitii_directe_randuri ?? 0).toLocaleString('ro-RO')} achiziții directe`;
+  const ac = manifest.acoperire || {};
+  const span = ac.ani || [];
+  const nf = (x) => (x ?? 0).toLocaleString('ro-RO');
+  const hasContracts = (manifest.datasets || []).some((d) => d.name === 'contracte_an');
+  $('scale').textContent =
+    `${nf(ac.achizitii_directe_randuri)} de achiziții directe`
+    + (hasContracts ? ' și 3,6 milioane de contracte' : '')
+    + `, ${span[0] ?? ''}–${span[span.length - 1] ?? ''}.`
+    + ' Se interoghează direct în browser — nu există niciun server.';
+  $('meta').textContent = `${nf(ac.achizitii_directe_randuri)} achiziții directe`;
 
+  // Six plain tabs instead of seventeen. The eight indicators were shown as bare ids
+  // ("dependenta-01"), which tells a reader nothing and pushed the table below the fold
+  // on a phone; they now live behind one "Semnale" tab with their real names.
   for (const [key, v] of Object.entries(VIEWS)) {
-    // The unit-price archive grows forwards from the day collection started, so on a
-    // fresh checkout there is nothing to show. Offering an empty tab would read as a
-    // broken feature rather than an honest "not collected yet".
     if (key === 'preturi' && !manifest.preturi_unitare) continue;
     if (key === 'ruti' && !manifest.ruti) continue;
     if (key === 'firme' && !manifest.furnizori_profil) continue;
     if (key === 'judete'
         && !(manifest.datasets || []).some((d) => d.name === 'judete_an')) continue;
-    if (key === 'contracte'
-        && !(manifest.datasets || []).some((d) => d.name === 'contracte_an')) continue;
     const b = document.createElement('button');
     b.textContent = v.label; b.dataset.key = key; b.role = 'tab';
     b.onclick = () => selectTab(key);
     $('tabs').append(b);
   }
-  for (const ind of manifest.indicatori ?? []) {
+
+  const semnale = manifest.indicatori || [];
+  if (semnale.length) {
+    for (const ind of semnale) {
+      const o = document.createElement('option');
+      o.value = ind.id;
+      o.textContent = ind.nume || ind.id;
+      o.dataset.temei = ind.temei || '';
+      $('semnal').append(o);
+    }
     const b = document.createElement('button');
-    b.textContent = ind.id; b.dataset.key = 'indicatori'; b.role = 'tab';
-    b.onclick = () => selectTab('indicatori', ind);
+    b.textContent = `Semnale (${semnale.length})`;
+    b.dataset.key = 'indicatori'; b.role = 'tab';
+    b.onclick = () => selectTab('indicatori', semnale[$('semnal').selectedIndex] || semnale[0]);
     $('tabs').append(b);
+    $('semnal').addEventListener('change', () => {
+      selectTab('indicatori', semnale[$('semnal').selectedIndex]);
+    });
   }
 
   try {
@@ -469,8 +552,22 @@ function selectTab(key, ind) {
   }
 })();
 
-$('run').addEventListener('click', run);
-$('q').addEventListener('keydown', (e) => { if (e.key === 'Enter') run(); });
+// The hero search is the first thing anyone touches. On a view that cannot be filtered
+// by text — the yearly summary is 41 rows of year x category — typing into it used to do
+// nothing at all. Jump to a view where the query means something instead.
+const SEARCHABLE_FALLBACK = 'autoritati';
+function heroSearch() {
+  const term = $('q').value.trim();
+  const usable = current !== 'indicatori' && VIEWS[current] && VIEWS[current].search;
+  if (term && !usable) {
+    selectTab(SEARCHABLE_FALLBACK);
+    $('q').value = term;
+  }
+  run();
+}
+
+$('run').addEventListener('click', heroSearch);
+$('q').addEventListener('keydown', (e) => { if (e.key === 'Enter') heroSearch(); });
 $('an').addEventListener('change', run);
 $('baza').addEventListener('change', run);
 </script>
