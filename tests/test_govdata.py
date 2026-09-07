@@ -14,12 +14,14 @@ from achizitii.govdata import (
     CONTRACTE,
     INITIERE,
     KNOWN_COLUMN_GAPS,
+    MIN_PREFIX_ALIAS,
     MODIFICARI,
     TABLES,
     Resource,
     _dedupe_periods,
     _header_key,
     _sniff_delimiter,
+    _sniff_dialect,
     is_known_gap,
     map_columns,
     missing_columns,
@@ -597,3 +599,76 @@ class TestPipeDelimited:
         """Adding the pipe must not break the formats that already worked."""
         assert _sniff_delimiter("a,b,c\n1,2,3\n") == ","
         assert _sniff_delimiter("Castigator^CUI^Valoare\n1^2^3\n") == "^"
+
+
+class TestQuotedCsvDialect:
+    """2022 wraps every field in pipes and separates with commas."""
+
+    def test_pipe_quoted_fields(self) -> None:
+        """Counting raw occurrences picks the pipe — two per field against one comma —
+        and shatters the row. That left 1.8M rows of 2022 with every column NULL."""
+        assert _sniff_dialect("|A|,|B|,|C|\n") == (",", "|")
+
+    def test_pipe_quoted_round_trip(self) -> None:
+        blob = b"|NUMAR_ACHIZITIE_DIRECTA|,|DENUMIRE_AC|\n|DA315|,|SCOALA X|\n"
+        header, rows = read_table(blob)
+        assert header == ["NUMAR_ACHIZITIE_DIRECTA", "DENUMIRE_AC"]
+        assert rows == [["DA315", "SCOALA X"]]
+
+    def test_plain_pipe_delimited_still_works(self) -> None:
+        """2023 Q3 is pipe-DELIMITED, not pipe-quoted; both must survive."""
+        assert _sniff_dialect("A|B|C\n")[0] == "|"
+        assert _sniff_dialect("a,b,c\n")[0] == ","
+
+    def test_2022_schema_maps(self) -> None:
+        header = ["NUMAR_ACHIZITIE_DIRECTA", "DATA_PUBLICARE_ACHIZITIE",
+                  "STARE_ACHIZITIE", "DENUMIRE_AC", "CUI_AC", "DENUMIRE_ACHIZITIE",
+                  "COD_CPV", "DENUMIRE_CPV", "DATA_ATRIBUIRE_ACHIZITIE",
+                  "VALOARE_ESTIMATA_RON", "VALOARE_ATRIBUITA_RON", "OFERTANT",
+                  "CUI_OFERTANT"]
+        m = map_columns(header, ACHIZITII_DIRECTE)
+        assert header[m["autoritate"]] == "DENUMIRE_AC"
+        assert header[m["valoare_ron"]] == "VALOARE_ATRIBUITA_RON"
+        assert header[m["furnizor"]] == "OFERTANT"
+        assert header[m["furnizor_cui"]] == "CUI_OFERTANT"
+
+
+class TestPrefixAliasMatching:
+    """Form-style exports carry explanatory prose inside the column name."""
+
+    def test_long_alias_matches_verbose_header(self) -> None:
+        verbose = (
+            "Valoarea totala actualizata a contractului inainte de modificari "
+            "(luand in considerare eventualele modificari ale contractului...)"
+        )
+        header = [verbose]
+        m = map_columns(header, MODIFICARI)
+        assert m.get("valoare_inainte_ron") == 0
+
+    def test_short_alias_does_not_prefix_match(self) -> None:
+        """A floor stops 'cui' or 'valoare' matching half the header by accident."""
+        assert len("valoare") < MIN_PREFIX_ALIAS
+        m = map_columns(["Valoare estimata a unui cu totul alt lucru"], MODIFICARI)
+        assert "valoare_inainte_ron" not in m
+
+
+class TestTwoRowHeader:
+    """The header can span two rows with merged cells."""
+
+    def test_overlay_at_row_zero(self) -> None:
+        """Section numbers sit on the header row and column names on the row below,
+        each covering columns the other leaves blank."""
+        header = ["Denumire autoritate contractanta", "VII.2.3 Cresterea pretului"]
+        rows = [
+            ["", "Valoarea totala a contractului dupa modificari"],
+            ["PRIMARIA X", "1000"],
+        ]
+        h2, r2 = realign_header(header, rows, MODIFICARI)
+        m = map_columns(h2, MODIFICARI)
+        assert "autoritate" in m and "valoare_dupa_ron" in m
+        assert r2 == [["PRIMARIA X", "1000"]]
+
+    def test_single_row_header_untouched(self) -> None:
+        header = ["Autoritate contractanta", "Cod CPV"]
+        rows = [["PRIMARIA X", "30213100-6"]]
+        assert realign_header(header, rows, ACHIZITII_DIRECTE) == (header, rows)
