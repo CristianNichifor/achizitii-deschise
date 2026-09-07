@@ -294,6 +294,13 @@ const VIEWS = {
       ORDER BY denumire
       LIMIT 200`,
   },
+  entitate: {
+    label: 'Fișa unei instituții',
+    search: 'denumire sau CUI al instituției',
+    note: 'Toate semnalele ridicate împotriva unei instituții, într-un singur loc. ' +
+          'Un semnal înseamnă „merită verificat”, niciodată „este ilegal”.',
+    sql: (f) => entitySql(f),
+  },
   ruti: {
     label: 'Întâlniri (RUTI)',
     search: 'decident, instituție sau subiect',
@@ -330,6 +337,40 @@ const VIEWS = {
       LIMIT 200`,
   },
 };
+
+
+// One institution, every signal against it. Each findings table has its own shape — some
+// carry a year, the value column is named differently in each — so the union is built
+// from the columns the manifest reports rather than assumed.
+const VALUE_COLS = [
+  'valoare_ron', 'valoare_atribuita_ron', 'valoare_dupa_ron',
+  'valoare_furnizor_ron', 'total_ron',
+];
+
+function entitySql(f) {
+  const term = (f.q || '').trim();
+  if (!term) return 'SELECT NULL AS semnal WHERE false';
+  const like = lit('%' + term + '%');
+  const parts = (manifest.indicatori || []).map((ind) => {
+    const cols = ind.columns || [];
+    const val = VALUE_COLS.find((c) => cols.includes(c));
+    const an = cols.includes('an') ? 't.an' : 'NULL::INTEGER';
+    const furnizor = cols.includes('furnizor') ? 't.furnizor' : "''";
+    return `
+      SELECT ${lit(ind.nume || ind.id)} AS semnal,
+             ${an} AS an,
+             t.autoritate,
+             t.autoritate_cui,
+             ${furnizor} AS furnizor,
+             ${val ? `t.${val}` : 'NULL::DOUBLE'} AS valoare_ron
+      FROM read_parquet(${lit(url(ind.file))}) t
+      WHERE t.autoritate ILIKE ${like} OR t.autoritate_cui ILIKE ${like}`;
+  });
+  if (!parts.length) return 'SELECT NULL AS semnal WHERE false';
+  return `${parts.join('\n      UNION ALL\n')}
+    ORDER BY valoare_ron DESC NULLS LAST
+    LIMIT 200`;
+}
 
 let manifest = null, conn = null, current = 'sumar', indicator = null;
 
@@ -386,7 +427,12 @@ function buildSql() {
 function render(table) {
   const head = $('out').tHead, body = $('out').tBodies[0];
   head.innerHTML = ''; body.innerHTML = '';
-  if (!table.numRows) { status('Niciun rezultat. Relaxează filtrele.'); return; }
+  if (!table.numRows) {
+    status(current === 'entitate' && !$('q').value.trim()
+      ? 'Scrieți numele sau CUI-ul unei instituții pentru a vedea toate semnalele.'
+      : 'Niciun rezultat. Relaxați filtrele.');
+    return;
+  }
   const cols = table.schema.fields.map((f) => f.name);
   // Arrow hands back Date32/Date64 as epoch milliseconds, which are numbers as far as
   // JS is concerned — so a date column rendered "2026-09-04" as "1.788.480.000.000"
@@ -416,6 +462,26 @@ function render(table) {
   status(`${table.numRows} rânduri${table.numRows === 200 ? ' (limitat la 200)' : ''}.`);
 }
 
+// A count of signals with no denominator is a smear. A large hospital generates more
+// findings than a village school because it buys more, so the entity view reports the
+// institution's total acquisitions alongside the number of signals raised.
+async function entityContext(term) {
+  if (!term) return '';
+  try {
+    const r = await conn.query(`
+      SELECT sum(n) AS achizitii, sum(valoare_totala_ron) AS valoare,
+             min(an) AS din, max(an) AS pana
+      FROM read_parquet(${lit(url('autoritati_an.parquet'))})
+      WHERE autoritate ILIKE ${lit('%' + term + '%')}
+         OR autoritate_cui ILIKE ${lit('%' + term + '%')}`);
+    const x = r.toArray()[0];
+    if (!x || !x.achizitii) return '';
+    const nf = (v) => Number(v).toLocaleString('ro-RO', { maximumFractionDigits: 0 });
+    return ` Pentru comparație, instituția are ${nf(x.achizitii)} achiziții directe`
+         + ` (${nf(x.valoare)} RON) între ${x.din} și ${x.pana}.`;
+  } catch { return ''; }
+}
+
 async function run() {
   if (!conn) return;
   $('run').disabled = true;
@@ -424,6 +490,10 @@ async function run() {
   $('sql').textContent = sql.trim();
   try {
     render(await conn.query(sql));
+    if (current === 'entitate') {
+      const extra = await entityContext($('q').value.trim());
+      if (extra) $('note').textContent = VIEWS.entitate.note + extra;
+    }
   } catch (err) {
     status(`Eroare: ${err.message}`);
     console.error(err);
