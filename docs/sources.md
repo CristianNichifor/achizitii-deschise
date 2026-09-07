@@ -152,3 +152,27 @@ project addresses.
 - [sicap-explorer](https://github.com/ciocan/sicap-explorer) — CC0; ships a torrent of an
   Elasticsearch snapshot: 22,101,610 direct acquisitions + 470,811 tenders, 2007 → July 2020.
   A possible fast backfill, though the torrent is from 2021 and seeders are unverified.
+
+
+## RUTI — Registrul Unic al Transparenței Intereselor
+
+`https://ruti.gov.ro/api/registry/meetings`
+
+Meetings that ministers, secretaries of state, deputies and senators publish in advance
+with interest groups — Romania's counterpart to the EU Transparency Register.
+
+| | |
+|---|---|
+| Access | Open JSON, no key. `robots.txt` is `User-agent: * / Disallow:` |
+| Size | **666 meetings**, 2025-10-13 → 2026-09-09 |
+| Cost to mirror | **7 requests** at `per_page=100` |
+| Conclusions published | **97 of 666 (15%)** — publishing that a meeting happened is required; saying what was discussed is not |
+| Institutions / decision-makers | 35 / 92 |
+| Company identifier | **none** — the third party appears only in free-text `name` and `description` |
+
+**Published as its own table; joined to nothing.** A supplier↔meeting indicator would be
+fuzzy string matching against 751,505 supplier names, over institutions that make up
+1.70% of our archive (452,922 of 26,672,772 acquisitions), across 666 records. It would
+fire almost never and would name real individuals on the strength of a string match. A
+meeting is lawful and the register exists to make it visible — its presence in this
+dataset says nothing about any contract. A test enforces the separation.

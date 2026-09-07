@@ -463,6 +463,33 @@ def build(out_dir: Path | None = None, *, only: str | None = None) -> dict[str, 
     else:
         log.info("no unit-price archive yet; publishing without price benchmarks")
 
+    # RUTI: the meetings register, published as its own table and deliberately NOT
+    # joined to anything. See src/achizitii/ruti.py for why a supplier<->meeting
+    # indicator would be indefensible on this data.
+    ruti_src = Path(ROOT) / "data" / "ruti" / "meetings.parquet"
+    if ruti_src.is_file():
+        shutil.copy2(ruti_src, out / "ruti.parquet")
+        rows, first, last, conclusions = con.execute(
+            f"""SELECT count(*), min(CAST(data_intalnirii AS DATE)),
+                       max(CAST(data_intalnirii AS DATE)),
+                       count(*) FILTER (WHERE concluzii IS NOT NULL)
+                FROM read_parquet('{out / "ruti.parquet"}')"""
+        ).fetchone()
+        manifest["ruti"] = {
+            "file": "ruti.parquet",
+            "intalniri": rows,
+            "din": str(first),
+            "pana_la": str(last),
+            # Surfaced because it is the register's central weakness: publishing that a
+            # meeting happened is mandatory, saying what was discussed is not.
+            "cu_concluzii_publicate": conclusions,
+            "nota": (
+                "Registrul întâlnirilor dintre decidenți și terți. O întâlnire este "
+                "legală, iar registrul există tocmai pentru a o face vizibilă — "
+                "prezența aici nu spune nimic despre vreun contract."
+            ),
+        }
+
     # Coverage and the exclusion count, so a reader can see what was left out. The
     # `ad` view only exists when the bulk archive was registered; in prices-only mode
     # the figures already in the manifest are still correct and are left alone.

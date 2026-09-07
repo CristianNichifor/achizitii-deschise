@@ -77,6 +77,13 @@ jobs:
       # ever published. The archive can only grow forwards from the first day collected,
       # so a lost day is lost for good. This is the step that makes the run durable;
       # without it the data expired with the artefact after 30 days.
+      # The meetings register gains entries continuously and costs 7 requests to
+      # mirror in full, so it is refreshed on the same schedule. It is published as its
+      # own table and joined to nothing — see src/achizitii/ruti.py.
+      - name: Refresh the RUTI meetings register
+        run: achizitii ruti
+        continue-on-error: true
+
       - name: Archive prices and rebuild the published bundle
         run: achizitii publish --only preturi
 
