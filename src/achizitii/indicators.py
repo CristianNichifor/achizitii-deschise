@@ -293,7 +293,7 @@ DIVIZARE_01 = Indicator(
     WITH d AS (
       SELECT autoritate, autoritate_cui, cpv, furnizor, furnizor_cui, nr_achizitie,
              TRY_CAST(valoare_ron AS DOUBLE) v,
-             TRY_CAST(data_publicare AS TIMESTAMP) t
+             data_publicare_ts t
       FROM achizitii_directe
       WHERE valoare_ron IS NOT NULL AND cpv IS NOT NULL AND furnizor IS NOT NULL
     ),
