@@ -230,13 +230,23 @@ ITEMS_GLOB = "items/**/*.parquet"
 PRICES_DIR = "preturi"
 
 # Only the columns a price comparison needs. The raw line items carry 27, including
-# authority and supplier names that are already in the bulk tables; slimming to twelve
-# takes a comparable row from ~110 bytes to 47.
+# authority and supplier names that are already in the bulk tables; slimming to fourteen
+# takes a row from ~110 bytes to roughly 50.
+#
+# EVERY line item is archived, not only the comparable ones. An earlier version filtered
+# on `comparabil` here, which quietly discarded a quarter of every day — 109 of 438 on
+# the first day measured. That is indefensible for a source that cannot be backfilled:
+# incomparable rows are still real public spending, the reason they are incomparable is
+# recorded rather than inferred, and a later improvement to the comparability rules can
+# reclassify them only if they were kept. METHODOLOGY.md already says incomparable rows
+# are kept and excluded from benchmarks; the archive now actually does that, and the
+# exclusion happens at benchmark time instead.
 ARCHIVE_SQL = """
 SELECT ocid, data_finalizare, judet, cpv, denumire_key, um, um_uncefact,
-       marime_pachet, cantitate, pret_unitar_ron, autoritate_cui, furnizor_cui
+       marime_pachet, cantitate, pret_unitar_ron, autoritate_cui, furnizor_cui,
+       comparabil, motiv_necomparabil
 FROM read_parquet('{glob}')
-WHERE comparabil AND pret_unitar_ron > 0
+WHERE pret_unitar_ron > 0
 """
 
 
@@ -265,7 +275,7 @@ def archive_items(out: Path) -> list[str]:
         f"""
         SELECT DISTINCT CAST(data_finalizare AS DATE) AS zi
         FROM read_parquet('{items / "**" / "*.parquet"}')
-        WHERE comparabil AND pret_unitar_ron > 0 AND data_finalizare IS NOT NULL
+        WHERE pret_unitar_ron > 0 AND data_finalizare IS NOT NULL
         ORDER BY 1
         """
     ).fetchall()
@@ -307,6 +317,7 @@ UNIT_PRICE_DATASETS = (
             SELECT *, quantile_cont(pret_unitar_ron, 0.01) OVER g AS lo,
                       quantile_cont(pret_unitar_ron, 0.99) OVER g AS hi
             FROM preturi
+            WHERE comparabil
             WINDOW g AS (PARTITION BY cpv, denumire_key, um, marime_pachet)
         )
         SELECT cpv, denumire_key, um, any_value(um_uncefact) AS um_uncefact,
@@ -323,7 +334,7 @@ UNIT_PRICE_DATASETS = (
                min(CAST(data_finalizare AS DATE))              AS din,
                max(CAST(data_finalizare AS DATE))              AS pana_la
         FROM taiat
-        WHERE pret_unitar_ron BETWEEN lo AND hi
+        WHERE comparabil AND pret_unitar_ron BETWEEN lo AND hi
         GROUP BY cpv, denumire_key, um, marime_pachet
         """,
     ),
@@ -347,7 +358,7 @@ UNIT_PRICE_DATASETS = (
                CASE WHEN count(*) >= {MIN_GROUP_FOR_MEDIAN}
                     THEN round(quantile_cont(pret_unitar_ron, 0.90), 2) END AS p90_ron
         FROM preturi
-        WHERE denumire_key IS NOT NULL AND denumire_key <> ''
+        WHERE comparabil AND denumire_key IS NOT NULL AND denumire_key <> ''
         GROUP BY denumire_key, um, marime_pachet
         """,
     ),
@@ -364,7 +375,7 @@ UNIT_PRICE_DATASETS = (
                CASE WHEN count(*) >= {MIN_GROUP_FOR_MEDIAN}
                     THEN round(median(pret_unitar_ron), 2) END AS mediana_ron
         FROM preturi
-        WHERE judet IS NOT NULL
+        WHERE comparabil AND judet IS NOT NULL
         GROUP BY cpv, denumire_key, um, marime_pachet, judet
         """,
     ),
