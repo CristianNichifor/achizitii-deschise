@@ -136,6 +136,53 @@ def max_ceiling_for(key: str) -> float | None:
     return max(values) if values else None
 
 
+
+# Contract values cannot be summed naively, and the reason is structural rather than a
+# matter of outliers.
+#
+# A framework agreement (acord-cadru) publishes its CEILING — the maximum callable over
+# the agreement's life — not money spent. Worse, for a multi-supplier framework that
+# ceiling is repeated on EVERY supplier's row: the four largest rows in the archive are
+# the same 177,930,419,250 RON, same authority, four different pharmaceutical
+# wholesalers. Summing them multiplies one ceiling by the number of suppliers, and then
+# double-counts again against the call-offs actually placed under it.
+#
+# So frameworks get a count and a median and NO sum. What was really committed lives in
+# the call-offs (contract subsecvent) and in ordinary contracts.
+CONTRACT_NATURE_SQL = """
+CASE
+  WHEN lower(COALESCE(incheiat_prin, '')) LIKE '%subsecvent%'
+    THEN 'contract_subsecvent'
+  WHEN lower(COALESCE(tip_incheiere, '')) LIKE '%acord-cadru%'
+    OR lower(COALESCE(incheiat_prin, '')) LIKE 'cu acord cadru%'
+    THEN 'plafon_acord_cadru'
+  WHEN lower(COALESCE(tip_incheiere, '')) LIKE '%contract de achizitii%'
+    OR lower(COALESCE(incheiat_prin, '')) LIKE 'fara acord%'
+    THEN 'contract'
+  ELSE 'nedeterminat'
+END
+"""
+
+EXTREME_CONTRACT = 1_000_000_000.0
+"""Above this a contract value is reported separately rather than trusted.
+
+Unlike a direct acquisition there is no legal ceiling to screen against, so nothing here
+is excluded — it is disclosed. The tail is small and dominant at once: 301 rows (0.076%)
+carry 40% of the ordinary-contract total, and 562 rows (0.027%) carry 84.5% of the
+framework total. A reader given only a sum would be reading those rows and nothing else,
+so both figures are published side by side."""
+
+CONTRACTE_VIEW = f"""
+CREATE OR REPLACE VIEW ct AS
+SELECT an,
+       {CONTRACT_NATURE_SQL} AS natura,
+       TRY_CAST(valoare_ron AS DOUBLE) AS v,
+       autoritate_cui,
+       furnizor_cui
+FROM contracte
+"""
+
+
 def ceilings_by_category_sql() -> str:
     """A VALUES list of (year, category, ceiling, highest-ever ceiling).
 
@@ -204,6 +251,36 @@ DATASETS = (
         FROM ad LEFT JOIN cpv_labels l ON l.code = substr(ad.cpv, 1, 8)
         WHERE cpv IS NOT NULL
         GROUP BY 1, 2
+        """,
+    ),
+    Dataset(
+        name="contracte_an",
+        description=(
+            "Contracts per year and nature. Framework agreements publish a CEILING that "
+            "is repeated per supplier, so they carry no sum — only a count and a median. "
+            "Money committed is the call-offs and ordinary contracts."
+        ),
+        sql=f"""
+        SELECT an,
+               natura,
+               count(*)                                        AS n,
+               -- No sum for framework ceilings: it would multiply one ceiling by the
+               -- number of suppliers and then double-count the call-offs beneath it.
+               CASE WHEN natura <> 'plafon_acord_cadru'
+                    THEN round(sum(v), 2) END                  AS valoare_totala_ron,
+               CASE WHEN natura <> 'plafon_acord_cadru'
+                    THEN round(sum(v) FILTER (WHERE v <= {EXTREME_CONTRACT}), 2)
+               END                                             AS valoare_fara_extreme_ron,
+               count(*) FILTER (WHERE v > {EXTREME_CONTRACT})   AS n_peste_prag_extrem,
+               round(median(v), 2)                             AS mediana_ron,
+               round(quantile_cont(v, 0.90), 2)                AS p90_ron,
+               round(max(v), 2)                                AS maxim_ron,
+               count(DISTINCT autoritate_cui)                  AS autoritati,
+               count(DISTINCT furnizor_cui)                    AS furnizori
+        FROM ct
+        WHERE v IS NOT NULL AND v > 0
+        GROUP BY 1, 2
+        ORDER BY 1, 2
         """,
     ),
     Dataset(
@@ -455,7 +532,8 @@ def build(out_dir: Path | None = None, *, only: str | None = None) -> dict[str, 
     else:
         from .govpipeline import _register
 
-        _register(con, {"achizitii_directe"})
+        _register(con, {"achizitii_directe", "contracte"})
+        con.execute(CONTRACTE_VIEW)
         con.execute(
             BASE_VIEW.format(
                 thresholds=ceilings_by_category_sql(),
