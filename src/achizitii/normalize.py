@@ -117,6 +117,11 @@ _BUNDLE_IN_NAME = re.compile(
 )
 
 
+# Units that count discrete things. A works contract measured in "bucati" is a job,
+# not a quantity of anything — see the one-off rule in normalize_item.
+_COUNT_UNITS = frozenset({"buc", "set", "lot"})
+
+
 def looks_like_bundle(*texts: str | None) -> bool:
     """True when the item description names a bundle regardless of its declared unit."""
     return any(_BUNDLE_IN_NAME.search(t) for t in texts if t)
@@ -248,6 +253,22 @@ def normalize_item(
         # Declared unit is a count, but the description names a bundle
         # ("PACHET ALIMENTAR", qty 1, um "bucata"). Trust the description.
         comparable, reason = False, "descriere_de_tip_pachet_fara_marime_cunoscuta"
+    elif quantity == 1 and unit.canonical in _COUNT_UNITS and (
+        contract_category(None, cpv) in ("lucrari", "servicii")
+    ):
+        # A works or service contract booked as one "bucata". The unit price is then
+        # simply the whole contract value, and comparing it against another job's is
+        # meaningless: "lucrari de demolare cladiri, 1 buc, 200,000 RON" is one job,
+        # not a price per unit of anything.
+        #
+        # Measured on the first archived day, this is 15% of otherwise-comparable rows,
+        # and they are the most expensive ones — so leaving them in would put the
+        # largest numbers in the benchmark and make every median meaningless.
+        #
+        # The test is structural rather than word-based: a works or service contract is
+        # not sold by the piece, whereas one laptop legitimately is. Category comes from
+        # the CPV division, so it works across the whole archive.
+        comparable, reason = False, "lucrare_sau_serviciu_unic_fara_pret_unitar"
 
     return NormalizedItem(
         description=description,
