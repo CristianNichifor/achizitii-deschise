@@ -74,11 +74,38 @@ SELECT a.an,
        a.furnizor,
        a.furnizor_cui,
        TRY_CAST(a.valoare_ron AS DOUBLE) AS v,
+       CASE WHEN regexp_matches(a.cpv_denumire, '{numeric_label}')
+            THEN NULL ELSE a.cpv_denumire END AS denumire_reala,
        p.prag,
        (TRY_CAST(a.valoare_ron AS DOUBLE) > 0
         AND (p.prag IS NULL OR TRY_CAST(a.valoare_ron AS DOUBLE) <= p.prag)) AS plauzibil
 FROM achizitii_directe a
 LEFT JOIN praguri p ON p.an = a.an AND p.categorie = a.categorie
+"""
+
+
+# A CPV label that is just a number is not a label. The pre-2019 exports put the
+# internal CPV_CODE_ID in the name column, so 39831240 reads "15113" instead of "Produse
+# de curatenie" — 14,074,968 rows, 56% of every labelled row in the archive, and 100% of
+# 2016 and 2017. Null-rate checks cannot see this: the column is populated, just with
+# something meaningless, which is why it survived every validation pass until someone
+# looked at the published table.
+#
+# The decimal branch matters. Matching only ^[0-9]+$ finds 7.4M rows and misses the ones
+# written "11728.0" — exactly half the problem.
+NUMERIC_LABEL = r'^[0-9]+([.,][0-9]+)?$'
+
+# The fix needs no external vocabulary: the same code carries a proper label in the later
+# exports, so the archive can repair itself. 8,572 codes have one; 510 never do, and
+# those are left NULL rather than filled with a guess.
+CPV_LABELS_VIEW = f"""
+CREATE OR REPLACE VIEW cpv_labels AS
+SELECT substr(cpv, 1, 8) AS code, mode(cpv_denumire) AS nume
+FROM achizitii_directe
+WHERE cpv IS NOT NULL
+  AND cpv_denumire IS NOT NULL
+  AND NOT regexp_matches(cpv_denumire, '{NUMERIC_LABEL}')
+GROUP BY 1
 """
 
 
@@ -130,7 +157,9 @@ DATASETS = (
         sql=f"""
         SELECT an,
                cpv,
-               any_value(cpv_denumire)                        AS cpv_denumire,
+               -- Prefer the repaired label; fall back to the row's own only when it is
+               -- a real name, and publish NULL rather than a number nobody can read.
+               any_value(COALESCE(l.nume, denumire_reala))    AS cpv_denumire,
                count(*)                                       AS n,
                count(*) FILTER (WHERE plauzibil)              AS n_valori_folosite,
                round(sum(v) FILTER (WHERE plauzibil), 2)      AS valoare_totala_ron,
@@ -140,7 +169,7 @@ DATASETS = (
                     THEN round(quantile_cont(v, 0.10) FILTER (WHERE plauzibil), 2) END AS p10_ron,
                CASE WHEN count(*) FILTER (WHERE plauzibil) >= {MIN_GROUP_FOR_MEDIAN}
                     THEN round(quantile_cont(v, 0.90) FILTER (WHERE plauzibil), 2) END AS p90_ron
-        FROM ad
+        FROM ad LEFT JOIN cpv_labels l ON l.code = substr(ad.cpv, 1, 8)
         WHERE cpv IS NOT NULL
         GROUP BY 1, 2
         """,
@@ -360,7 +389,13 @@ def build(out_dir: Path | None = None, *, only: str | None = None) -> dict[str, 
         from .govpipeline import _register
 
         _register(con, {"achizitii_directe"})
-        con.execute(BASE_VIEW.format(thresholds=ceilings_by_category_sql()))
+        con.execute(
+            BASE_VIEW.format(
+                thresholds=ceilings_by_category_sql(),
+                numeric_label=NUMERIC_LABEL,
+            )
+        )
+        con.execute(CPV_LABELS_VIEW)
         manifest["datasets"] = [_write(con, d, out) for d in DATASETS]
 
     # Unit prices: the archive is append-only and starts the day collection began, so it
