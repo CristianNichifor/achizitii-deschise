@@ -46,10 +46,10 @@ def _make_items(tmp: Path, rows: list | None = None) -> None:
         """CREATE TABLE it (ocid VARCHAR, data_finalizare DATE, judet VARCHAR, cpv VARCHAR,
            denumire_key VARCHAR, um VARCHAR, um_uncefact VARCHAR, marime_pachet INTEGER,
            cantitate DOUBLE, pret_unitar_ron DOUBLE, autoritate_cui VARCHAR,
-           furnizor_cui VARCHAR, comparabil BOOLEAN)"""
+           furnizor_cui VARCHAR, comparabil BOOLEAN, motiv_necomparabil VARCHAR)"""
     )
     for row in rows if rows is not None else ROWS:
-        con.execute("INSERT INTO it VALUES (?,?,?,?,?,?,?,?,?,?,?,?,true)", list(row))
+        con.execute("INSERT INTO it VALUES (?,?,?,?,?,?,?,?,?,?,?,?,true,NULL)", list(row))
     target = tmp / "items" / "an=2026"
     target.mkdir(parents=True, exist_ok=True)
     con.execute(f"COPY it TO '{target / 'part-0.parquet'}' (FORMAT PARQUET)")
@@ -79,22 +79,54 @@ def test_archiving_is_idempotent_and_never_rewrites(tmp_path: Path) -> None:
     assert day.read_bytes() == before, "archived day was overwritten by a smaller re-ingest"
 
 
-def test_incomparable_rows_are_not_archived(tmp_path: Path) -> None:
-    """Only comparable rows earn a place; the rest cannot support a price comparison."""
+def test_incomparable_rows_ARE_archived_but_excluded_from_benchmarks(tmp_path: Path) -> None:
+    """Keep the row, exclude it from the benchmark — not the other way round.
+
+    An earlier version filtered on `comparabil` when archiving, which quietly discarded
+    a quarter of every day: 109 of 438 line items on the first day measured. For a
+    source that cannot be backfilled that is unrecoverable, and it contradicted
+    METHODOLOGY.md, which says incomparable rows are kept and excluded from benchmarks.
+
+    Keeping them also means a later improvement to the comparability rules can
+    reclassify old rows. Dropping them forecloses that permanently.
+    """
     _make_items(tmp_path)
     items = tmp_path / "items" / "an=2026" / "part-0.parquet"
     con = duckdb.connect()
     con.execute(f"CREATE TABLE t AS SELECT * FROM read_parquet('{items}')")
-    con.execute("UPDATE t SET comparabil = false WHERE judet = 'Iasi'")
+    con.execute(
+        "UPDATE t SET comparabil = false, motiv_necomparabil = 'unitate_nerecunoscuta' "
+        "WHERE judet = 'Iasi'"
+    )
     con.execute(f"COPY t TO '{items}' (FORMAT PARQUET)")
     con.close()
 
     archive_items(tmp_path)
     day = tmp_path / PRICES_DIR / "an=2026" / "luna=09" / "2026-09-04.parquet"
     con = duckdb.connect()
-    n = con.execute(f"SELECT count(*) FROM read_parquet('{day}')").fetchone()[0]
+    total, incomparable = con.execute(
+        f"""SELECT count(*), count(*) FILTER (WHERE NOT comparabil)
+            FROM read_parquet('{day}')"""
+    ).fetchone()
     con.close()
-    assert n == 1
+    assert total == 2, "both rows should be archived"
+    assert incomparable == 1, "the incomparable row must be kept, with its reason"
+
+    # ...and must not reach the benchmark.
+    (tmp_path / "manifest.json").write_text(
+        '{"datasets": [], "indicatori": []}', encoding="utf-8"
+    )
+    build(tmp_path, only="preturi")
+    con = duckdb.connect()
+    # Both "pulpe de pui" rows are in the archive; only the comparable one may be
+    # counted. Asserting on this group specifically, rather than on the total, because
+    # the total also includes the unrelated second day.
+    n = con.execute(
+        f"""SELECT n FROM read_parquet('{tmp_path / 'preturi_unitare.parquet'}')
+            WHERE denumire_key = 'pulpe de pui'"""
+    ).fetchone()[0]
+    con.close()
+    assert n == 1, f"the group counted {n} rows; the incomparable one must be excluded"
 
 
 def test_prices_only_refuses_without_an_existing_manifest(tmp_path: Path) -> None:
@@ -178,3 +210,42 @@ def test_only_the_product_view_lets_cpv_vary() -> None:
     ), "preturi_produs must report how many CPV codes were merged"
     for name in ("preturi_unitare", "preturi_judet"):
         assert "cpv" in by_name[name], f"{name} must keep CPV in the group key"
+
+
+def test_one_off_works_are_not_unit_prices() -> None:
+    """A works or service contract booked as 1 "bucata" has no unit price.
+
+    Its "unit price" is simply the whole contract value: "lucrari de demolare cladiri,
+    1 buc, 200,000 RON" is one job. On the first archived day these were 15% of
+    otherwise-comparable rows AND the most expensive ones, so leaving them in would put
+    the largest numbers into the benchmark and make every median meaningless.
+
+    The test is structural, not word-based: works and services are not sold by the
+    piece, whereas one laptop legitimately is.
+    """
+    from achizitii.normalize import normalize_item
+
+    def check(description: str, cpv: str, quantity: float, unit: str):
+        return normalize_item(
+            description=description,
+            long_description=None,
+            cpv=cpv,
+            quantity=quantity,
+            unit_raw=unit,
+            unit_price_ron=1000.0,
+        )
+
+    for description, cpv in [
+        ("Lucrari de demolare cladiri", "45111100"),
+        ("Executie lucrari de semnalizare rutiera", "45233221"),
+        ("Servicii pentru evenimente", "79952000"),
+    ]:
+        item = check(description, cpv, 1, "buc")
+        assert not item.comparable, f"{description} should not be a unit price"
+        assert item.incomparable_reason == "lucrare_sau_serviciu_unic_fara_pret_unitar"
+
+    # Goods stay comparable at any quantity, and works measured in a real unit do too:
+    # 1,200 m2 of asphalt genuinely has a price per square metre.
+    assert check("Laptop Dell Vostro", "30213100", 1, "buc").comparable
+    assert check("Laptop Dell Vostro", "30213100", 15, "buc").comparable
+    assert check("Lucrari de asfaltare", "45233222", 1200, "mp").comparable
