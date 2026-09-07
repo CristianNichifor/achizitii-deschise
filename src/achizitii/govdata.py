@@ -262,69 +262,205 @@ TABLES_BY_KEY = {t.key: t for t in TABLES}
 # gets ignored, which defeats the point of having one.
 #
 # Every entry needs a reason. "It looked fine" is not one: each of these was confirmed
-# against the source before being listed.
-KNOWN_COLUMN_GAPS: dict[tuple[str, str], dict[str, Any]] = {
-    ("contracte", "numar_oferte"): {
-        "years": range(2019, 2027),
-        "reason": (
-            "The publisher stopped including NumarOfertePrimite after 2018. This is a "
-            "real loss of transparency, not a mapping failure: single-bidder rate is "
-            "the strongest indicator in the literature and cannot be computed for these "
-            "years from the bulk exports."
-        ),
-    },
-    ("contracte", "subcontractat"): {
-        "years": (2016, 2017, 2018),
-        "reason": (
-            "Reporting convention change, not absence. 2016-2017 record only 'DA' and "
-            "leave the rest blank; 2019 onward record 'DA' and 'NU' explicitly. A blank "
-            "in the early years therefore means 'not subcontracted' — reading it as "
-            "missing would understate subcontracting."
-        ),
-    },
-    ("contracte", "valoare_estimata_ron"): {
-        "years": range(2022, 2027),
-        "reason": (
-            "The estimate stopped being carried on the contract row. For later years it "
-            "must come from the initiation notice, which reintroduces the framework "
-            "double-counting problem."
-        ),
-    },
-    ("contracte", "licitatie_electronica"): {
-        "years": range(2019, 2027),
-        "reason": "CuLicitatieElectronica appears only in the 2016-2018 exports.",
-    },
-    ("initiere", "tip_anunt"): {
-        "years": (2016, 2017, 2018),
-        "reason": (
-            "The 2016-2018 initiation exports carry no notice-type column at all; "
-            "TIP_ANUNT first appears in the 2019 snake-case format. Every row in those "
-            "files is a participation notice, so the column carried no information."
-        ),
-    },
-    ("initiere", "stare_procedura"): {
-        "years": range(2016, 2027),
-        "reason": (
-            "Procedure status is not published in any bulk initiation export examined "
-            "(2016-2026); it exists only in the SEAP API. Kept in the schema because "
-            "the API path populates it."
-        ),
-    },
-    ("initiere", "loturi"): {
-        "years": range(2016, 2027),
-        "reason": (
-            "The lot-split flag is not published in the bulk initiation exports; only "
-            "the contracts table carries lot numbers."
-        ),
-    },
+# against the source header before being listed — the column is genuinely absent, not
+# merely unmatched. That distinction has been got wrong in both directions here:
+# `subcontractat` looked absent but was a reporting-convention change, and `initiere`
+# looked present but was three mapped columns out of eighteen.
+#
+# A column may appear more than once with different periods and different reasons, so
+# each key holds a tuple of entries.
+KNOWN_COLUMN_GAPS: dict[tuple[str, str], tuple[dict[str, Any], ...]] = {
+    ("contracte", "numar_oferte"): (
+        {
+            "years": range(2019, 2027),
+            "reason": (
+                "The publisher stopped including NumarOfertePrimite after 2018. This is a "
+                "real loss of transparency, not a mapping failure: single-bidder rate is "
+                "the strongest indicator in the literature and cannot be computed for "
+                "these years from the bulk exports at all."
+            ),
+        },
+    ),
+    ("contracte", "subcontractat"): (
+        {
+            "years": range(2023, 2027),
+            "reason": (
+                "Dropped from the contracts export after 2022. Subcontracting cannot be "
+                "measured from the bulk data for recent years at all."
+            ),
+        },
+        {
+            "years": (2016, 2017, 2018),
+            "reason": (
+                "Reporting convention change, not absence. 2016-2017 record only 'DA' and "
+                "leave the rest blank; 2019 onward record 'DA' and 'NU' explicitly. A "
+                "blank in the early years therefore means 'not subcontracted' — reading "
+                "it as missing would understate subcontracting."
+            ),
+        },
+    ),
+    ("contracte", "valoare_estimata_ron"): (
+        {
+            "years": range(2022, 2027),
+            "reason": (
+                "The estimate stopped being carried on the contract row. For later years it "
+                "must come from the initiation notice, which reintroduces the framework "
+                "double-counting problem."
+            ),
+        },
+    ),
+    ("contracte", "licitatie_electronica"): (
+        {
+            "years": range(2019, 2027),
+            "reason": (
+                "CuLicitatieElectronica appears only in the 2016-2018 exports."
+            ),
+        },
+    ),
+    ("contracte", "cpv_denumire"): (
+        {
+            "years": range(2016, 2023),
+            "reason": (
+                "Only the CPV code is published before 2023, not its label. The label is "
+                "recoverable from the code via the EU vocabulary, so nothing is lost."
+            ),
+        },
+    ),
+    ("contracte", "nr_lot"): (
+        {
+            "years": range(2016, 2022),
+            "reason": (
+                "Lot numbering was introduced in the 2022 export. Before that a multi-lot "
+                "award appears as several rows with no lot identifier, so lots cannot "
+                "be distinguished from separate contracts."
+            ),
+        },
+    ),
+    ("contracte", "incheiat_prin"): (
+        {
+            "years": range(2016, 2022),
+            "reason": (
+                "The framework call-off flag was introduced in 2022. For earlier years "
+                "tip_incheiere still separates an acord-cadru from an ordinary contract, "
+                "which is what the double-counting guard relies on."
+            ),
+        },
+    ),
+    ("achizitii_directe", "tip_procedura"): (
+        {
+            "years": range(2022, 2027),
+            "reason": (
+                "Dropped from the modern direct-acquisition exports. It carried no "
+                "information in any case: every row in this table IS a direct "
+                "acquisition, so the column was constant."
+            ),
+        },
+    ),
+    ("achizitii_directe", "furnizor_localitate"): (
+        {
+            "years": (2022, 2024, 2025, 2026),
+            "reason": (
+                "Supplier locality appears intermittently — present 2016-2021 and 2023, "
+                "absent otherwise. Where absent it can only come from ONRC or the SEAP "
+                "entity endpoint."
+            ),
+        },
+    ),
+    ("achizitii_directe", "tip_contract"): (
+        {
+            "years": (2022,),
+            "reason": (
+                "The 2022 export publishes thirteen columns and omits contract type "
+                "entirely. Category is derived from the CPV division instead, which "
+                "resolves for 99.99% of that year's rows."
+            ),
+        },
+    ),
+    ("initiere", "tip_anunt"): (
+        {
+            "years": (2016, 2017, 2018),
+            "reason": (
+                "The 2016-2018 initiation exports carry no notice-type column; TIP_ANUNT "
+                "first appears in the 2019 snake-case format. Every row in those files "
+                "is a participation notice, so the column carried no information."
+            ),
+        },
+    ),
+    ("initiere", "stare_procedura"): (
+        {
+            "years": range(2016, 2027),
+            "reason": (
+                "Procedure status is not published in any bulk initiation export examined "
+                "(2016-2026); it exists only in the SEAP API."
+            ),
+        },
+    ),
+    ("initiere", "loturi"): (
+        {
+            "years": range(2016, 2027),
+            "reason": (
+                "The lot-split flag is not published in the bulk initiation exports; only "
+                "the contracts table carries lot numbers."
+            ),
+        },
+    ),
+    ("initiere", "denumire"): (
+        {
+            "years": range(2016, 2023),
+            "reason": (
+                "The procedure title is not published in the initiation exports before "
+                "2023. Those years support counting and value analysis but not text "
+                "matching against the object of the procurement."
+            ),
+        },
+    ),
+    ("initiere", "criteriu_atribuire"): (
+        {
+            "years": range(2023, 2027),
+            "reason": (
+                "Award criteria were dropped from the initiation export after 2022. They "
+                "remain on the contracts table, so criterion analysis must be done "
+                "there for recent years."
+            ),
+        },
+    ),
+    ("initiere", "utilitati"): (
+        {
+            "years": range(2023, 2027),
+            "reason": (
+                "The utilities-sector flag was dropped from the initiation export after "
+                "2022."
+            ),
+        },
+    ),
+    ("initiere", "fonduri_comunitare"): (
+        {
+            "years": range(2023, 2027),
+            "reason": (
+                "The EU-funding flag was dropped from the initiation export after 2022, so "
+                "EU-funded procurement cannot be isolated from this table for recent "
+                "years."
+            ),
+        },
+    ),
+    ("initiere", "judet"): (
+        {
+            "years": (2025, 2026),
+            "reason": (
+                "County reappeared in the 2023-2024 initiation exports and was dropped "
+                "again for 2025-2026. Where absent it must come from the SEAP entity "
+                "endpoint, one authority at a time."
+            ),
+        },
+    ),
 }
 
 
 def is_known_gap(table: str, column: str, year: int) -> dict[str, Any] | None:
     """Return the documented reason a column is empty that year, or None."""
-    entry = KNOWN_COLUMN_GAPS.get((table, column))
-    if entry and year in entry["years"]:
-        return entry
+    for entry in KNOWN_COLUMN_GAPS.get((table, column), ()):
+        if year in entry["years"]:
+            return entry
     return None
 
 

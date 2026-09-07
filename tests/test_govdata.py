@@ -382,9 +382,20 @@ class TestKnownColumnGaps:
         assert is_known_gap("achizitii_directe", "autoritate_cui", 2021) is None
 
     def test_every_gap_states_a_reason(self) -> None:
-        for (table, column), entry in KNOWN_COLUMN_GAPS.items():
-            assert entry["reason"].strip(), (table, column)
-            assert len(entry["reason"]) > 40, f"{table}.{column}: reason too thin"
+        """A gap without a stated reason is indistinguishable from a bug being hidden."""
+        for (table, column), entries in KNOWN_COLUMN_GAPS.items():
+            assert entries, (table, column)
+            for entry in entries:
+                assert entry["reason"].strip(), (table, column)
+                assert len(entry["reason"]) > 40, f"{table}.{column}: reason too thin"
+
+    def test_a_column_may_have_several_dated_reasons(self) -> None:
+        """`subcontractat` is a convention change early on and a genuine absence later;
+        collapsing those into one reason would lose the distinction."""
+        early = is_known_gap("contracte", "subcontractat", 2016)
+        late = is_known_gap("contracte", "subcontractat", 2024)
+        assert early and late and early["reason"] != late["reason"]
+        assert is_known_gap("contracte", "subcontractat", 2020) is None
 
 
 class TestDeclaredDimensions:
