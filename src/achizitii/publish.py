@@ -617,8 +617,8 @@ def build(out_dir: Path | None = None, *, only: str | None = None) -> dict[str, 
     if firme_src.is_file():
         con.execute(
             f"""COPY (SELECT cui, denumire, judet, cod_judet_auto, data_inregistrare,
-                             inactiv, data_inactivare, data_radiere, platitor_tva,
-                             verificat_la
+                             inactiv, data_inactivare, data_reactivare, data_radiere,
+                             platitor_tva, verificat_la
                       FROM read_parquet('{firme_src}') ORDER BY cui)
                 TO '{out / "furnizori_profil.parquet"}'
                 (FORMAT PARQUET, COMPRESSION ZSTD)"""
@@ -636,9 +636,10 @@ def build(out_dir: Path | None = None, *, only: str | None = None) -> dict[str, 
             "radiate": struck,
             "sursa": "ANAF — webservicesp.anaf.ro (serviciu public, fără cheie)",
             "nota": (
-                "Statutul fiscal este cel de la data verificării, NU de la data "
-                "achiziției. O firmă inactivă azi putea fi perfect activă când a "
-                "câștigat contractul."
+                "Coloana `inactiv` este starea la data verificării. Pentru a judeca o "
+                "achiziție folosiți datele absolute — data_inactivare, data_reactivare, "
+                "data_radiere — comparate cu data achiziției: o firmă inactivă azi "
+                "putea fi perfect activă când a câștigat contractul."
             ),
         }
 
