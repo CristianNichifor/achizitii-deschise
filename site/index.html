@@ -295,10 +295,11 @@ const VIEWS = {
       LIMIT 200`,
   },
   entitate: {
-    label: 'Fișa unei instituții',
-    search: 'denumire sau CUI al instituției',
-    note: 'Toate semnalele ridicate împotriva unei instituții, într-un singur loc. ' +
-          'Un semnal înseamnă „merită verificat”, niciodată „este ilegal”.',
+    label: 'Fișă entitate',
+    search: 'instituție SAU firmă — denumire ori CUI',
+    note: 'Toate semnalele care menționează o entitate — ca autoritate contractantă ' +
+          'SAU ca furnizor — într-un singur loc. Un semnal înseamnă „merită ' +
+          'verificat”, niciodată „este ilegal”.',
     sql: (f) => entitySql(f),
   },
   ruti: {
@@ -347,10 +348,42 @@ const VALUE_COLS = [
   'valoare_furnizor_ron', 'total_ron',
 ];
 
+// Three of the eight findings tables carry no furnizor_cui at all — estimare-01,
+// incetare-01, prag-01 and modificare-01 identify the supplier only by name. So a
+// search for a fiscal code found nothing in them while the same company's NAME found
+// plenty, which is exactly the "I pasted a CUI and got nothing" complaint.
+//
+// The profile table knows both, so a numeric term is resolved to a name first and both
+// are searched. Set by run() before the SQL is built.
+let resolvedName = '';
+
+async function resolveEntity(term) {
+  resolvedName = '';
+  if (!/^[0-9]{2,10}$/.test(term.replace(/^ro\s*/i, '').trim())) return;
+  const digits = term.replace(/^ro\s*/i, '').trim();
+  try {
+    const r = await conn.query(`
+      SELECT denumire FROM read_parquet(${lit(url('furnizori_profil.parquet'))})
+      WHERE cui = ${lit(digits)} LIMIT 1`);
+    const row = r.toArray()[0];
+    if (row && row.denumire) {
+      // ANAF writes "DEDEMAN SRL"; SEAP writes "DEDEMAN S.R.L.". Matching the full
+      // registered name therefore finds nothing, which is how a CUI search came back
+      // empty for a company whose NAME returned twelve findings. Strip the legal form
+      // and match on what is actually distinctive.
+      resolvedName = String(row.denumire)
+        .replace(/\b(S\.?C\.?|S\.?R\.?L\.?|S\.?A\.?|P\.?F\.?A\.?|SNC|SCS|I\.?I\.?|I\.?F\.?)\b/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+  } catch { /* a failed lookup simply means we search the raw term */ }
+}
+
 function entitySql(f) {
   const term = (f.q || '').trim();
   if (!term) return 'SELECT NULL AS semnal WHERE false';
   const like = lit('%' + term + '%');
+  const nameLike = resolvedName ? lit('%' + resolvedName + '%') : null;
   const parts = (manifest.indicatori || []).map((ind) => {
     const cols = ind.columns || [];
     const val = VALUE_COLS.find((c) => cols.includes(c));
@@ -364,7 +397,11 @@ function entitySql(f) {
              ${furnizor} AS furnizor,
              ${val ? `t.${val}` : 'NULL::DOUBLE'} AS valoare_ron
       FROM read_parquet(${lit(url(ind.file))}) t
-      WHERE t.autoritate ILIKE ${like} OR t.autoritate_cui ILIKE ${like}`;
+      WHERE t.autoritate ILIKE ${like} OR t.autoritate_cui ILIKE ${like}
+         ${cols.includes('furnizor') ? `OR t.furnizor ILIKE ${like}` : ''}
+         ${cols.includes('furnizor_cui') ? `OR t.furnizor_cui ILIKE ${like}` : ''}
+         ${nameLike && cols.includes('furnizor') ? `OR t.furnizor ILIKE ${nameLike}` : ''}
+         ${nameLike ? `OR t.autoritate ILIKE ${nameLike}` : ''}`;
   });
   if (!parts.length) return 'SELECT NULL AS semnal WHERE false';
   return `${parts.join('\n      UNION ALL\n')}
@@ -429,7 +466,7 @@ function render(table) {
   head.innerHTML = ''; body.innerHTML = '';
   if (!table.numRows) {
     status(current === 'entitate' && !$('q').value.trim()
-      ? 'Scrieți numele sau CUI-ul unei instituții pentru a vedea toate semnalele.'
+      ? 'Scrieți denumirea sau CUI-ul unei instituții ori firme.'
       : 'Niciun rezultat. Relaxați filtrele.');
     return;
   }
@@ -486,13 +523,15 @@ async function run() {
   if (!conn) return;
   $('run').disabled = true;
   status('Se interoghează…');
+  if (current === 'entitate') await resolveEntity($('q').value.trim());
   const sql = buildSql();
   $('sql').textContent = sql.trim();
   try {
     render(await conn.query(sql));
     if (current === 'entitate') {
-      const extra = await entityContext($('q').value.trim());
-      if (extra) $('note').textContent = VIEWS.entitate.note + extra;
+      const named = resolvedName ? ` CUI ${$('q').value.trim()} = ${resolvedName}.` : '';
+      const extra = await entityContext(resolvedName || $('q').value.trim());
+      $('note').textContent = VIEWS.entitate.note + named + extra;
     }
   } catch (err) {
     status(`Eroare: ${err.message}`);
