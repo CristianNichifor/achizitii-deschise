@@ -77,7 +77,8 @@ ACHIZITII_DIRECTE = TableSpec(
             "cui autoritate contractanta", "autoritatecontractantacui", "cui ac"
         ),
         "nr_achizitie": _c(
-            "numar achizitie directa", "numar achizitie", "numaranunt", "numar anunt"
+            "numar achizitie directa", "numar achizitie", "numaranunt", "numar anunt",
+            "numar achizite",  # typo in the 2023 Q2 source
         ),
         "data_publicare": _c(
             "data publicare", "dataanunt", "data anunt", "data publicare achizitie"
@@ -117,8 +118,10 @@ CONTRACTE = TableSpec(
         ),
         "autoritate_cui": _c(
             "cui autoritate contractanta", "autoritatecontractantacui", "cui ac",
-            # Typo in the 2022 Q4 source: "conractanta".
-            "cui autoritate conractanta",
+            # Typo in the 2022 Q4 source: "conractanta". One 2022 quarter shortens the
+            # header to a bare "CUI"; that is under MIN_PREFIX_ALIAS, so it is matched
+            # exactly and cannot swallow "CUI ofertant".
+            "cui autoritate conractanta", "cui",
         ),
         "tip_procedura": _c("tip procedura", "tipprocedura"),
         "nr_anunt_initiere": _c(
@@ -140,7 +143,10 @@ CONTRACTE = TableSpec(
         # a framework whose headline value is also present. Adding them together
         # double-counts massively: 534.4 bn RON of "acord-cadru" against 176.9 bn of
         # actual public procurement contracts.
-        "tip_incheiere": _c("tip incheiere contract", "tipincheierecontract"),
+        "tip_incheiere": _c(
+            # "Tip inchiere contract" is a typo in the 2024 source.
+            "tip incheiere contract", "tipincheierecontract", "tip inchiere contract",
+        ),
         "incheiat_prin": _c("incheiat prin"),
         # Number of offers received. Present only in the 2016-2018 era exports and
         # dropped from later ones — which is unfortunate, because single-bidder rate is
@@ -149,12 +155,16 @@ CONTRACTE = TableSpec(
         "numar_oferte": _c("numaroferteprimite", "numar oferte primite", "numar oferte"),
         # The early exports carry the estimate on the contract row itself, so
         # estimate-versus-award needs no join for those years.
-        "valoare_estimata_ron": _c("valoareestimataparticipare", "valoare estimata"),
+        "valoare_estimata_ron": _c(
+            "valoareestimataparticipare", "valoare estimata", "valoare estimata ron"
+        ),
         "licitatie_electronica": _c("culicitatieelectronica", "cu licitatie electronica"),
         "subcontractat": _c("subcontractat", "cu subcontractare"),
         "data_contract": _c("data contract", "datacontract"),
         "nr_contract": _c("numar contract", "numarcontract"),
-        "valoare_ron": _c("valoare contract ron", "valoareron", "valoare"),
+        "valoare_ron": _c(
+            "valoare contract ron", "valoare atribuita ron", "valoareron", "valoare"
+        ),
         # "Catigator" is a typo in the 2022 Q4 source, not a variant spelling.
         "furnizor": _c(
             "ofertant castigator", "castigator", "ofertant", "catigator"
@@ -179,14 +189,17 @@ FARA_ANUNT = TableSpec(
         "criteriu_atribuire": _c("criteriu de atribuire", "tip criterii de atribuire"),
         "cpv": _c("cod cpv"),
         "cpv_denumire": _c("denumire cpv"),
-        "data_contract": _c("data contract"),
+        # "Dtaa contract" is a typo in the 2024 source, not a variant spelling.
+        "data_contract": _c("data contract", "dtaa contract"),
         "nr_contract": _c("numar contract"),
         "denumire": _c("denumire contract"),
         "valoare_ron": _c(
             "valoare atribuita ron", "valoare contract ron", "valoare atribuita"
         ),
-        "furnizor": _c("ofertant castigator", "nume castigator"),
-        "furnizor_cui": _c("cui ofertant castigator", "cui castigator"),
+        "furnizor": _c("ofertant castigator", "nume castigator", "ofertant"),
+        "furnizor_cui": _c(
+            "cui ofertant castigator", "cui castigator", "cui ofertant"
+        ),
     },
 )
 
@@ -222,7 +235,9 @@ INITIERE = TableSpec(
         "data_publicare": _c("data publicare", "datapublicare"),
         "tip_contract": _c("tip contract", "tipcontract"),
         "criteriu_atribuire": _c("criteriuatribuire", "criteriu de atribuire"),
-        "modalitate_atribuire": _c("modalitate de atribuire", "modalitatedesfasurare"),
+        "modalitate_atribuire": _c(
+            "modalitate de atribuire", "modalitatedesfasurare", "modalitate atribuire"
+        ),
         "loturi": _c("contractul este impartit in loturi", "cu loturi"),
         "denumire": _c("denumire procedura"),
         "cpv": _c("cod cpv", "maincpv", "main cpv code", "cod cpv procedura"),
@@ -279,11 +294,64 @@ TABLES_BY_KEY = {t.key: t for t in TABLES}
 # A column may appear more than once with different periods and different reasons, so
 # each key holds a tuple of entries.
 KNOWN_COLUMN_GAPS: dict[tuple[str, str], tuple[dict[str, Any], ...]] = {
+    ("contracte", "tip_contract"): (
+        {
+            "years": (2022,),
+            "reason": (
+                "The 2022 Q1 export publishes nineteen columns and omits contract type, "
+                "CPV, award criteria and several others; the other three quarters carry "
+                "them. The gap is partial — about 41% of that year's rows — so a "
+                "year-level statement would overstate it in both directions."
+            ),
+        },
+    ),
+    ("contracte", "cpv"): (
+        {
+            "years": (2022,),
+            "reason": (
+                "Absent from the 2022 Q1 export, which carries NUTS region codes where "
+                "the other quarters carry CPV. Roughly 41% of that year's contracts "
+                "therefore cannot be classified by procurement category at all."
+            ),
+        },
+    ),
+    ("contracte", "tip_incheiere"): (
+        {
+            "years": (2022,),
+            "reason": (
+                "Absent from the 2022 Q1 export. Without it a framework agreement "
+                "cannot be told from an ordinary contract for those rows, so the "
+                "double-counting guard cannot be applied to them and their values must "
+                "not be summed with the rest."
+            ),
+        },
+    ),
+    ("contracte", "criteriu_atribuire"): (
+        {
+            "years": (2022,),
+            "reason": (
+                "Omitted by the 2022 Q1 export while the other quarters carry it, so "
+                "award-criteria analysis covers roughly three fifths of that year."
+            ),
+        },
+    ),
+    ("achizitii_directe", "cpv_denumire"): (
+        {
+            "years": (2021,),
+            "reason": (
+                "The 2021 snake-case exports carry CPV_CODE_ID, a numeric internal "
+                "identifier, rather than a CPV label — which is why that column is "
+                "deliberately not mapped here. The code itself is present, so the label "
+                "is recoverable from the EU vocabulary."
+            ),
+        },
+    ),
     ("contracte", "numar_oferte"): (
         {
             # 2022 Q4 publishes it as "Numar oferte" and DOES carry it (335,080 rows),
-            # so the gap is not continuous. Recorded as two windows rather than one.
-            "years": (2019, 2020, 2021),
+            # so the gap is not continuous. 2018 and 2022 are partial: some quarters of
+            # those years carry the column and others do not.
+            "years": (2018, 2019, 2020, 2021, 2022),
             "reason": (
                 "The publisher stopped including NumarOfertePrimite after 2018. This is a "
                 "real loss of transparency, not a mapping failure: single-bidder rate is "
@@ -302,7 +370,8 @@ KNOWN_COLUMN_GAPS: dict[tuple[str, str], tuple[dict[str, Any], ...]] = {
     ),
     ("contracte", "subcontractat"): (
         {
-            "years": range(2023, 2027),
+            # 2022 is partial: Q1 omits the column, the other quarters carry it.
+            "years": (2022, *range(2023, 2027)),
             "reason": (
                 "Dropped from the contracts export after 2022. Subcontracting cannot be "
                 "measured from the bulk data for recent years at all."
@@ -338,6 +407,20 @@ KNOWN_COLUMN_GAPS: dict[tuple[str, str], tuple[dict[str, Any], ...]] = {
                 "CuLicitatieElectronica appears only in the 2016-2018 exports."
             ),
         },
+        {
+            # A different kind of gap from the one above, and worth separating: in these
+            # years the column IS mapped, it is simply mostly empty — 78% in 2016, 92%
+            # in 2017, 42% in 2018. It records whether an electronic auction was held,
+            # which is optional, so a blank most likely means "no auction" rather than
+            # "not recorded". The source does not distinguish the two, and neither
+            # reading is asserted here.
+            "years": (2016, 2017, 2018),
+            "reason": (
+                "Present but sparsely filled, and an empty cell is indistinguishable "
+                "from a recorded 'no'. The column therefore supports a lower bound on "
+                "electronic auctions and nothing stronger."
+            ),
+        },
     ),
     ("contracte", "cpv_denumire"): (
         {
@@ -350,7 +433,9 @@ KNOWN_COLUMN_GAPS: dict[tuple[str, str], tuple[dict[str, Any], ...]] = {
     ),
     ("contracte", "nr_lot"): (
         {
-            "years": range(2016, 2022),
+            # 2022 included: lot numbering arrived mid-year, so one quarter still lacks
+            # it and the year is 59% null rather than 0% or 100%.
+            "years": range(2016, 2023),
             "reason": (
                 "Lot numbering was introduced in the 2022 export. Before that a multi-lot "
                 "award appears as several rows with no lot identifier, so lots cannot "
@@ -360,7 +445,8 @@ KNOWN_COLUMN_GAPS: dict[tuple[str, str], tuple[dict[str, Any], ...]] = {
     ),
     ("contracte", "incheiat_prin"): (
         {
-            "years": range(2016, 2022),
+            # 2022 and 2024 are partial — one quarter of each omits the flag.
+            "years": (*range(2016, 2022), 2022, 2024),
             "reason": (
                 "The framework call-off flag was introduced in 2022. For earlier years "
                 "tip_incheiere still separates an acord-cadru from an ordinary contract, "
@@ -380,17 +466,19 @@ KNOWN_COLUMN_GAPS: dict[tuple[str, str], tuple[dict[str, Any], ...]] = {
     ),
     ("achizitii_directe", "furnizor_localitate"): (
         {
-            "years": (2022, 2024, 2025, 2026),
+            "years": (2022, 2023, 2024, 2025, 2026),
             "reason": (
-                "Supplier locality appears intermittently — present 2016-2021 and 2023, "
-                "absent otherwise. Where absent it can only come from ONRC or the SEAP "
-                "entity endpoint."
+                "Supplier locality appears intermittently — fully present 2016-2021, "
+                "then from 2022 only in some quarters of a year rather than none or all "
+                "(2023 is 77% null, not 100%). Where absent it can only come from ONRC "
+                "or the SEAP entity endpoint."
             ),
         },
     ),
     ("achizitii_directe", "tip_contract"): (
         {
-            "years": (2022,),
+            # 2024 is partial: one quarter drops the column, the others keep it.
+            "years": (2022, 2024),
             "reason": (
                 "The 2022 export publishes thirteen columns and omits contract type "
                 "entirely. Category is derived from the CPV division instead, which "
