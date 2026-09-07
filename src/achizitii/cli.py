@@ -98,6 +98,12 @@ def main(argv: list[str] | None = None) -> int:
                      help="evaluate rule validity as of this date")
     ind.add_argument("--list", action="store_true", help="list indicators and exit")
 
+    # -- ruti ------------------------------------------------------------------------
+    sub.add_parser(
+        "ruti",
+        help="ingest the RUTI register of meetings between officials and third parties",
+    )
+
     # -- publish -------------------------------------------------------------------
     pub = sub.add_parser(
         "publish", help="build the browser-queryable bundle served from GitHub Pages"
@@ -184,6 +190,12 @@ def main(argv: list[str] | None = None) -> int:
         _emit(result)
         # Unavailability is an expected outcome for a free experimental endpoint, not a
         # pipeline failure — nothing downstream depends on it.
+        return 0
+
+    if args.command == "ruti":
+        from .ruti import ingest
+
+        _emit(ingest())
         return 0
 
     if args.command == "publish":

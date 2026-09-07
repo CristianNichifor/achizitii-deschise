@@ -178,6 +178,23 @@ const VIEWS = {
       ORDER BY n DESC, mediana_ron DESC NULLS LAST
       LIMIT 200`,
   },
+  ruti: {
+    label: 'Întâlniri (RUTI)',
+    search: 'decident, instituție sau subiect',
+    note: 'Registrul întâlnirilor dintre decidenți și terți. O întâlnire este LEGALĂ, ' +
+          'iar registrul există tocmai pentru a o face vizibilă — prezența aici nu ' +
+          'spune nimic despre vreun contract și nu este legată de datele de achiziții.',
+    sql: (f) => `
+      SELECT data_intalnirii, decident, functie, institutie, titlu,
+             locul_intalnirii, concluzii, anulat
+      FROM read_parquet(${lit(url('ruti.parquet'))})
+      ${f.q ? `WHERE decident ILIKE ${lit('%' + f.q + '%')}
+            OR institutie ILIKE ${lit('%' + f.q + '%')}
+            OR titlu ILIKE ${lit('%' + f.q + '%')}
+            OR descriere ILIKE ${lit('%' + f.q + '%')}` : ''}
+      ORDER BY data_intalnirii DESC
+      LIMIT 200`,
+  },
   furnizori: {
     label: 'Furnizori',
     search: 'denumire sau CUI',
@@ -278,8 +295,9 @@ function selectTab(key, ind) {
   $('q').style.display = search ? '' : 'none';
   $('qlabel').style.display = search ? '' : 'none';
   if (search) $('qlabel').textContent = search;
-  $('minn').parentElement.style.display = key === 'indicatori' ? 'none' : '';
-  const yearless = key === 'preturi'
+  $('minn').parentElement.style.display =
+    (key === 'indicatori' || key === 'ruti') ? 'none' : '';
+  const yearless = key === 'preturi' || key === 'ruti'
     || (key === 'indicatori' && !(indicator.columns || []).includes('an'));
   $('an').parentElement.style.display = yearless ? 'none' : '';
   if (key === 'preturi' && manifest.preturi_unitare) {
@@ -318,6 +336,7 @@ function selectTab(key, ind) {
     // fresh checkout there is nothing to show. Offering an empty tab would read as a
     // broken feature rather than an honest "not collected yet".
     if (key === 'preturi' && !manifest.preturi_unitare) continue;
+    if (key === 'ruti' && !manifest.ruti) continue;
     const b = document.createElement('button');
     b.textContent = v.label; b.dataset.key = key; b.role = 'tab';
     b.onclick = () => selectTab(key);
