@@ -104,6 +104,13 @@ def main(argv: list[str] | None = None) -> int:
         help="ingest the RUTI register of meetings between officials and third parties",
     )
 
+    # -- firme -----------------------------------------------------------------------
+    fi = sub.add_parser(
+        "firme", help="enrich supplier fiscal codes from ANAF's free public service"
+    )
+    fi.add_argument("--limit", type=int, default=None,
+                    help="stop after this many codes (smoke test)")
+
     # -- publish -------------------------------------------------------------------
     pub = sub.add_parser(
         "publish", help="build the browser-queryable bundle served from GitHub Pages"
@@ -190,6 +197,12 @@ def main(argv: list[str] | None = None) -> int:
         _emit(result)
         # Unavailability is an expected outcome for a free experimental endpoint, not a
         # pipeline failure — nothing downstream depends on it.
+        return 0
+
+    if args.command == "firme":
+        from .firme import enrich
+
+        _emit(enrich(limit=args.limit))
         return 0
 
     if args.command == "ruti":
