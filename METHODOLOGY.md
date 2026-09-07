@@ -429,6 +429,24 @@ proof of registration; it does not make youth an exclusion ground, and a new com
 entitled to compete. The registration date is published so anyone can look; no finding is
 generated from it.
 
+### One institution, every signal
+
+The site can show all eight indicators filtered to a single contracting authority. It is
+the view a journalist actually wants — "what has been raised about this institution" —
+and it is also the one most easily misread, so it never reports a count on its own.
+
+A large hospital generates more findings than a village school because it buys more. The
+view therefore states the denominator beside the count:
+
+| | Signals | Direct acquisitions | Rate |
+|---|---|---|---|
+| Institutul Clinic Fundeni | 189 | 28,802 | 0.66% |
+| Comuna Botiz | 18 | 1,730 | 1.04% |
+
+Read as raw counts, Fundeni looks ten times worse. Read against volume, Botiz has the
+higher rate. Neither number is an accusation, and the view says so — but publishing the
+first without the second would have invited exactly the wrong conclusion.
+
 ## Corrections
 
 Errors are expected. The process is documented in full in
