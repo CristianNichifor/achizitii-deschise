@@ -166,7 +166,10 @@ def fetch_batch(cuis: list[str], on_date: date, limiter: RateLimiter) -> list[Fi
             with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
                 payload = json.load(response)
             return [to_firma(r, on_date) for r in (payload.get("found") or [])]
-        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as exc:
+        # OSError covers ConnectionResetError, which ANAF does throw on a long run and
+        # which is NOT a URLError — the first full pass over the authorities died on
+        # one. urllib raises it raw when the reset happens mid-body.
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError) as exc:
             wait = 5 * (attempt + 1)
             log.warning("batch failed (%s); retrying in %ds", exc, wait)
             time.sleep(wait)
@@ -228,8 +231,13 @@ def save(records: list[Firma], cache: Path | None = None) -> Path:
     return path
 
 
-def supplier_cuis() -> list[str]:
-    """Every distinct supplier fiscal code in the archive, normalised."""
+def archive_cuis() -> list[str]:
+    """Every fiscal code in the archive — suppliers AND contracting authorities.
+
+    Authorities are worth enriching for the same reason suppliers are: the exports never
+    say where a buyer is, so without this there is no way to ask whether an authority
+    buys locally. There are only 18,827 of them, about 190 requests.
+    """
     import duckdb
 
     from .govpipeline import _register
@@ -237,8 +245,10 @@ def supplier_cuis() -> list[str]:
     con = duckdb.connect()
     _register(con, {"achizitii_directe", "contracte"})
     rows = con.execute(
-        """SELECT DISTINCT furnizor_cui FROM achizitii_directe WHERE furnizor_cui IS NOT NULL
-           UNION SELECT DISTINCT furnizor_cui FROM contracte WHERE furnizor_cui IS NOT NULL"""
+        """SELECT DISTINCT furnizor_cui AS c FROM achizitii_directe WHERE furnizor_cui IS NOT NULL
+           UNION SELECT DISTINCT furnizor_cui FROM contracte WHERE furnizor_cui IS NOT NULL
+           UNION SELECT DISTINCT autoritate_cui FROM achizitii_directe WHERE autoritate_cui IS NOT NULL
+           UNION SELECT DISTINCT autoritate_cui FROM contracte WHERE autoritate_cui IS NOT NULL"""
     ).fetchall()
     con.close()
     seen: dict[str, None] = {}
@@ -254,14 +264,14 @@ def enrich(
 ) -> dict[str, Any]:
     """Fetch every supplier not already cached. Resumable and safe to interrupt."""
     checked = on_date or datetime.now(UTC).date()
-    wanted = supplier_cuis()
+    wanted = archive_cuis()
     done = cached_cuis(cache)
     todo = [c for c in wanted if c not in done]
     if limit:
         todo = todo[:limit]
 
     log.info(
-        "%s suppliers, %s already cached, fetching %s in %s batches",
+        "%s fiscal codes, %s already cached, fetching %s in %s batches",
         f"{len(wanted):,}", f"{len(done):,}", f"{len(todo):,}",
         f"{(len(todo) + BATCH - 1) // BATCH:,}",
     )
