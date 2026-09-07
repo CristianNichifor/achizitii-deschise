@@ -9,10 +9,13 @@
 #    them produces a number that describes nothing. The brand is the strongest
 #    available signal for splitting a CPV into comparable groups.
 #
-# 2. THE ART. 156 INDICATOR. Legea 98/2016 requires that where a technical
-#    specification names a make or source, it be accompanied by "sau echivalent".
-#    Detecting a brand WITHOUT that phrase is a deterministic, auditable check —
-#    far more defensible than asking a language model whether a spec looks restrictive.
+# 2. A FUTURE ART. 156 CHECK — NOT CURRENTLY SHIPPED. Legea 98/2016 requires that
+#    where a technical specification names a make, it carry "sau echivalent".
+#    Detecting a brand without that phrase is deterministic and auditable, but it
+#    needs the tender documents. Measured against direct-acquisition titles it does
+#    not work at all: the phrase occurs in 0.04% of brand-naming descriptions, because
+#    those titles are not specifications and have no qualifier to omit. See the
+#    "Why there is no brand indicator" section in METHODOLOGY.md.
 #
 # Matching is on folded text (lowercase, diacritics stripped, punctuation removed) and
 # requires a word boundary, so "hp" does not match inside "shpe" and "dell" does not
@@ -33,7 +36,6 @@ brands:
   - toshiba
   - fujitsu
   - samsung
-  - lg
   - philips
   - sony
   - canon
@@ -62,7 +64,6 @@ brands:
   - tp link
   - d link
   - huawei
-  - honor
   - xiaomi
   - motorola
   - nokia
@@ -97,7 +98,6 @@ brands:
   - skoda
   - opel
   - iveco
-  - man
   - scania
   - jcb
   - caterpillar
@@ -115,7 +115,6 @@ brands:
   - fresenius
   - bbraun
   - b braun
-  - braun
   - johnson
   - abbott
   - biomerieux
@@ -133,17 +132,13 @@ brands:
   - esselte
   - leitz
   - durable
-  - tesa
   - henkel
   - unilever
   - procter gamble
   - nestle
   - coca cola
   - pepsi
-  - dorna
   - borsec
-  - certeze
-  - bucovina
 
 # Words that look like brands but are not: standards bodies, certifications and
 # materials. Matching these as brands would produce false art. 156 findings on
@@ -166,3 +161,34 @@ not_brands:
   - inox
   - a4
   - a3
+
+# Tokens that ARE real brands but collide with ordinary Romanian words, place names or
+# abbreviations. Measured on a 600,000-row sample of direct-acquisition descriptions,
+# bare matching on these was wrong far too often to use:
+#
+#   man       24.5% plausible — "DET.MAN.20KG" (detergent manual), "GAR.MAN.+SILD".
+#                               Romanian abbreviates manual/manoperă as MAN.
+#   lg        43.7% plausible — "LEUSTEAN RO. LG. C.I", "MARAR RO LG CI".
+#                               Produce catalogues abbreviate legume as LG.
+#   braun     63.9% plausible — "PROSOP ISABEL BRAUN 70X100CM" is a brown towel.
+#   bucovina  68.4% plausible — a region: "Bucovina TV", "Centrul Cultural Bucovina".
+#   tesa      70.4% plausible — TESA is also the standard staff category
+#                               (tehnic, economic, socio-administrativ).
+#   dorna     85.4% plausible — also a place: "Transport ... la Vatra Dorna si retur".
+#
+# Each is counted only when the description also names something the brand actually
+# makes. This trades a little recall for precision, which is the right direction: these
+# feed price-comparison groups, and a wrongly attributed brand splits or merges groups
+# that should not be.
+ambiguous:
+  man: [camion, autocamion, autogunoiera, autobuz, autospeciala, tgl, tgs, tgx, tga,
+        remorca, sasiu, etrier, turbo, autoutilitara, autovehicul, tractor]
+  lg: [tv, monitor, ecran, display, led, lcd, oled, climatizare, aer conditionat,
+       blu ray, dvd, frigider, telefon, hard, ssd, videoproiector, televizor]
+  braun: [medical, solutie, fiola, perfuzie, seringa, cateter, propofol, clorura,
+          metronidazol, sterofundin, aparat de ras, epilator, termometru, tensiometru]
+  bucovina: [apa, minerala, lapte, smantana, cascaval, branza, iaurt, unt]
+  tesa: [banda, adeziv, scotch, duct tape, lipit, etichete, fixare]
+  dorna: [apa, minerala, lapte, uht, smantana, iaurt, unt, carbogazoasa]
+  honor: [telefon, smartphone, tableta, mobil]
+  certeze: [apa, minerala, plata, carbogazoasa]
