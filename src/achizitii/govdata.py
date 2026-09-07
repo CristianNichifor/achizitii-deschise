@@ -116,7 +116,9 @@ CONTRACTE = TableSpec(
             "autoritate contractanta", "autoritatecontractanta", "denumire ac"
         ),
         "autoritate_cui": _c(
-            "cui autoritate contractanta", "autoritatecontractantacui", "cui ac"
+            "cui autoritate contractanta", "autoritatecontractantacui", "cui ac",
+            # Typo in the 2022 Q4 source: "conractanta".
+            "cui autoritate conractanta",
         ),
         "tip_procedura": _c("tip procedura", "tipprocedura"),
         "nr_anunt_initiere": _c(
@@ -126,7 +128,8 @@ CONTRACTE = TableSpec(
         "data_publicare": _c("data publicare", "dataanuntatribuire", "dataanunt"),
         "tip_contract": _c("tip contract", "tipcontract"),
         "criteriu_atribuire": _c(
-            "tip criterii de atribuire", "criteriu de atribuire", "tipcriteriiatribuire"
+            "tip criterii de atribuire", "criteriu de atribuire",
+            "tipcriteriiatribuire", "tip criteriu de atribuire",
         ),
         "cpv": _c("cod cpv", "cpvcode", "cpv code"),
         "cpv_denumire": _c("denumire cpv", "cpvcodename"),
@@ -143,17 +146,23 @@ CONTRACTE = TableSpec(
         # dropped from later ones — which is unfortunate, because single-bidder rate is
         # the strongest indicator in the procurement-corruption literature. Its absence
         # from the modern exports is why that indicator is limited to the early years.
-        "numar_oferte": _c("numaroferteprimite", "numar oferte primite"),
+        "numar_oferte": _c("numaroferteprimite", "numar oferte primite", "numar oferte"),
         # The early exports carry the estimate on the contract row itself, so
         # estimate-versus-award needs no join for those years.
         "valoare_estimata_ron": _c("valoareestimataparticipare", "valoare estimata"),
         "licitatie_electronica": _c("culicitatieelectronica", "cu licitatie electronica"),
-        "subcontractat": _c("subcontractat"),
+        "subcontractat": _c("subcontractat", "cu subcontractare"),
         "data_contract": _c("data contract", "datacontract"),
         "nr_contract": _c("numar contract", "numarcontract"),
         "valoare_ron": _c("valoare contract ron", "valoareron", "valoare"),
-        "furnizor": _c("ofertant castigator", "castigator"),
-        "furnizor_cui": _c("cui ofertant castigator", "castigatorcui"),
+        # "Catigator" is a typo in the 2022 Q4 source, not a variant spelling.
+        "furnizor": _c(
+            "ofertant castigator", "castigator", "ofertant", "catigator"
+        ),
+        "furnizor_cui": _c(
+            "cui ofertant castigator", "castigatorcui", "cui ofertant", "cui of",
+            "cui castigator",
+        ),
     },
 )
 
@@ -272,12 +281,22 @@ TABLES_BY_KEY = {t.key: t for t in TABLES}
 KNOWN_COLUMN_GAPS: dict[tuple[str, str], tuple[dict[str, Any], ...]] = {
     ("contracte", "numar_oferte"): (
         {
-            "years": range(2019, 2027),
+            # 2022 Q4 publishes it as "Numar oferte" and DOES carry it (335,080 rows),
+            # so the gap is not continuous. Recorded as two windows rather than one.
+            "years": (2019, 2020, 2021),
             "reason": (
                 "The publisher stopped including NumarOfertePrimite after 2018. This is a "
                 "real loss of transparency, not a mapping failure: single-bidder rate is "
                 "the strongest indicator in the literature and cannot be computed for "
                 "these years from the bulk exports at all."
+            ),
+        },
+        {
+            "years": range(2023, 2027),
+            "reason": (
+                "Absent again from 2023 onward. The column reappeared briefly in 2022 "
+                "Q4 under the name 'Numar oferte', which is why the gap is recorded as "
+                "two windows rather than one continuous run."
             ),
         },
     ),
