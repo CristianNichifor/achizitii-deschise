@@ -69,15 +69,23 @@ ACHIZITII_DIRECTE = TableSpec(
     # "Achiziții directe", "Achizitii Directe T I 2024", "Cumparari directe 2017 - T1"
     match=re.compile(r"(?i)\b(achizi[tț]ii|cump[aă]r[aă]ri)\s+directe"),
     columns={
-        "autoritate": _c("autoritate contractanta", "autoritatecontractanta", "nume ac"),
+        "autoritate": _c(
+            "autoritate contractanta", "autoritatecontractanta", "nume ac",
+            "denumire ac",
+        ),
         "autoritate_cui": _c(
             "cui autoritate contractanta", "autoritatecontractantacui", "cui ac"
         ),
         "nr_achizitie": _c(
             "numar achizitie directa", "numar achizitie", "numaranunt", "numar anunt"
         ),
-        "data_publicare": _c("data publicare", "dataanunt", "data anunt"),
-        "data_finalizare": _c("data finalizare", "datacontract", "data contract"),
+        "data_publicare": _c(
+            "data publicare", "dataanunt", "data anunt", "data publicare achizitie"
+        ),
+        "data_finalizare": _c(
+            "data finalizare", "datacontract", "data contract",
+            "data atribuire achizitie",
+        ),
         "denumire": _c("denumire achizitie", "denumire", "descriere", "titlucontract"),
         "cpv": _c("cod cpv", "cpvcode"),
         # NOT "cpvcodeid": that column holds a numeric internal id (39831240 -> 15113),
@@ -87,10 +95,13 @@ ACHIZITII_DIRECTE = TableSpec(
         ),
         "tip_contract": _c("tip contract", "tipincheierecontract"),
         "valoare_ron": _c(
-            "valoare achizitie ron", "valoare achizitie", "valoareron", "valoare"
+            "valoare achizitie ron", "valoare achizitie", "valoare atribuita ron",
+            "valoareron", "valoare",
         ),
-        "furnizor": _c("ofertant castigator", "castigator"),
-        "furnizor_cui": _c("cui ofertant castigator", "castigatorcui", "cui castigator"),
+        "furnizor": _c("ofertant castigator", "castigator", "ofertant"),
+        "furnizor_cui": _c(
+            "cui ofertant castigator", "castigatorcui", "cui castigator", "cui ofertant"
+        ),
         # present only in the older exports
         "furnizor_localitate": _c("castigatorlocalitate", "oras castigator"),
         "tip_procedura": _c("tip procedura", "tipprocedura"),
@@ -225,13 +236,16 @@ MODIFICARI = TableSpec(
     key="modificari",
     match=re.compile(r"(?i)modificare\s+contract"),
     columns={
-        "autoritate": _c("autoritate contractanta"),
+        "autoritate": _c("autoritate contractanta", "denumire autoritate contractanta"),
         "autoritate_cui": _c("cui autoritate contractanta"),
         "nr_anunt_atribuire": _c("numar anunt atribuire"),
-        "data_publicare": _c("data publicare"),
+        "data_publicare": _c("data publicare", "data anunt de modificare"),
         "nr_contract": _c("numar contract"),
         "data_contract": _c("data contract"),
-        "descriere_modificari": _c("descrierea modificarilor"),
+        "descriere_modificari": _c(
+            "descrierea modificarilor", "secunea vii 2 1 descrierea modificarilor",
+            "sectiunea vii 2 1 descrierea modificarilor",
+        ),
         "valoare_inainte_ron": _c(
             "valoarea totala actualizata a contractului inainte de modificari"
         ),
@@ -347,8 +361,24 @@ def _sniff_delimiter(text: str) -> str:
     or semicolon. Omitting the pipe made a 142 MB file parse as a single column: the
     header matched no aliases, so all 529,483 rows were dropped without an error.
     """
+    return _sniff_dialect(text)[0]
+
+
+def _sniff_dialect(text: str) -> tuple[str, str]:
+    """Delimiter and quote character. Neither is ever declared.
+
+    2022 wraps every field in pipes and separates with commas:
+
+        |DA31518890|,|09/30/2022|,|Oferta acceptata|,|SCOALA GIMNAZIALA ...|
+
+    Counting raw occurrences picks the pipe there — two per field against one comma —
+    and shatters each row into fragments. The header then matches almost nothing, which
+    left 1.8M rows of 2022 with every major column NULL.
+    """
     head = text.split("\n", 1)[0]
-    return max("|^;,\t", key=head.count)
+    if head.lstrip("﻿").startswith("|") and "|,|" in head:
+        return ",", "|"
+    return max("|^;,\t", key=head.count), '"'
 
 
 # ------------------------------------------------------------------------- readers
@@ -362,7 +392,8 @@ def _rows_csv(blob: bytes) -> tuple[list[str], list[list[str]]]:
             continue
     else:
         text = blob.decode("utf-8", errors="replace")
-    reader = csv.reader(io.StringIO(text), delimiter=_sniff_delimiter(text))
+    delimiter, quotechar = _sniff_dialect(text)
+    reader = csv.reader(io.StringIO(text), delimiter=delimiter, quotechar=quotechar)
     rows = list(reader)
     if not rows:
         return [], []
@@ -525,13 +556,35 @@ def _header_key(name: str) -> str:
     return re.sub(r"[^a-z0-9]", "", fold(name))
 
 
+MIN_PREFIX_ALIAS = 24
+"""Only aliases at least this long may match as a prefix."""
+
+
 def map_columns(header: list[str], spec: TableSpec) -> dict[str, int]:
-    """canonical name -> column index, for the columns this file actually has."""
+    """canonical name -> column index, for the columns this file actually has.
+
+    Exact match first. Failing that, a LONG alias may match a header that merely starts
+    with it, because the form-style exports carry explanatory text inside the column
+    name itself:
+
+        "Valoarea totala actualizata a contractului inainte de modificari (luand in
+         considerare eventualele modificari ale contractului si adaptarii ale
+         preturilor...."
+
+    Exact matching can never hit that, and chasing each variant by hand is futile — the
+    trailing prose differs between quarters. The length floor keeps short aliases such
+    as "cui" or "valoare" from matching half the header by accident.
+    """
     lookup = {_header_key(h): i for i, h in enumerate(header) if h}
     mapping: dict[str, int] = {}
     for canonical, aliases in spec.columns.items():
         for alias in aliases:
-            idx = lookup.get(_header_key(alias))
+            key = _header_key(alias)
+            idx = lookup.get(key)
+            if idx is None and len(key) >= MIN_PREFIX_ALIAS:
+                idx = next(
+                    (i for h, i in lookup.items() if h.startswith(key)), None
+                )
             if idx is not None:
                 mapping[canonical] = idx
                 break
@@ -552,36 +605,65 @@ MAX_PREAMBLE_SCAN = 12
 """Rows to examine when looking for the real header."""
 
 
+def _overlay(primary: list[str], secondary: list[str]) -> list[str]:
+    """Combine two header rows, preferring a non-empty cell from `primary`."""
+    width = max(len(primary), len(secondary))
+    return [
+        (primary[i].strip() if i < len(primary) else "")
+        or (secondary[i].strip() if i < len(secondary) else "")
+        for i in range(width)
+    ]
+
+
 def realign_header(
     header: list[str], rows: list[list[str]], spec: TableSpec
 ) -> tuple[list[str], list[list[str]]]:
-    """Skip title banners that precede the real header row.
+    """Find the real header, which is not always row zero.
 
-    Several exports open with a title instead of column names — the 2023 files begin
-    with a single cell reading "Raport Achizitii directe Trimestrul I 2023". Treating
-    that as the header maps no columns at all, so every record becomes all-NULL and is
-    dropped: a 167 MB file parsed to zero rows.
+    Three layouts occur in these exports:
 
-    The real header is found by scoring candidate rows against the alias table and
-    taking the best. Returns the original split when row zero is already the best
-    candidate, so well-formed files are untouched.
+    1. Row zero is the header — the ordinary case, left untouched.
+    2. Row zero is a title banner ("Raport Achizitii directe Trimestrul I 2023") and the
+       header sits below it. Treating the banner as the header maps nothing, so every
+       record becomes all-NULL and is dropped: a 167 MB file parsed to zero rows.
+    3. The header spans TWO rows with merged cells. The contract-modification exports
+       put a section number on one row ("VII.2.3 Creșterea prețului") and the column name
+       on the next ("Valoarea totala actualizata a contractului inainte de modificari"),
+       each covering columns the other leaves blank. Neither row alone maps everything,
+       so both overlay orders are scored — which order wins depends on the file.
+
+    Candidates are scored against the alias table and the best wins.
     """
     def score(candidate: list[str]) -> int:
         return len(map_columns(candidate, spec))
 
     best_score = score(header)
-    best_index = -1  # -1 means "keep the current header"
-    for i, row in enumerate(rows[:MAX_PREAMBLE_SCAN]):
-        if (s := score(row)) > best_score:
-            best_score, best_index = s, i
+    best: tuple[list[str], int] | None = None  # (header, rows consumed)
 
-    if best_index < 0:
+    # The two-row case can begin at row zero itself: the contract-modification exports
+    # put section numbers in the header row and the column names in the row below it.
+    if rows:
+        for candidate in (_overlay(header, rows[0]), _overlay(rows[0], header)):
+            if (s := score(candidate)) > best_score:
+                best_score, best = s, (candidate, 1)
+
+    for i, row in enumerate(rows[:MAX_PREAMBLE_SCAN]):
+        candidates: list[tuple[list[str], int]] = [(row, 1)]
+        if i + 1 < len(rows):
+            candidates.append((_overlay(row, rows[i + 1]), 2))
+            candidates.append((_overlay(rows[i + 1], row), 2))
+        for candidate, consumed in candidates:
+            if (s := score(candidate)) > best_score:
+                best_score, best = s, (candidate, i + consumed)
+
+    if best is None:
         return header, rows
+    candidate, consumed = best
     log.info(
-        "header found on row %d (%d columns matched, vs %d on row 0)",
-        best_index + 1, best_score, score(header),
+        "header resolved after %d row(s) (%d columns matched, vs %d on row 0)",
+        consumed, best_score, score(header),
     )
-    return rows[best_index], rows[best_index + 1 :]
+    return candidate, rows[consumed:]
 
 
 def to_records(
