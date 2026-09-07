@@ -31,17 +31,25 @@ HEADERS = {
 }
 
 # Politeness. We are an unauthenticated guest on an undocumented endpoint.
-MAX_RPS = 40.0
-"""Requests per second, per client.
+MAX_RPS = 4.0
+"""Requests per second, per client. DO NOT RAISE WITHOUT READING THIS.
 
-Measured against the live endpoint rather than guessed. Throughput rises to about 37
-records a second at 16 concurrent workers and then PLATEAUS while p95 latency doubles
-(0.38s -> 0.76s at 24 workers) — past that we add load without gaining anything, which
-is the point at which pushing harder is just rude. A sustained 400-record run at 16
-workers held 36.9 rec/s with zero errors and flat latency.
+This was briefly set to 40, with 16 concurrent workers, because a burst test showed 37
+records a second with zero errors and flat latency. That reasoning was wrong. "The
+server answers quickly" is not "the server is willing to serve this much", and SICAP
+settled the question itself a few hours later:
 
-The old value was 3.0. That was a guess of mine, not a limit SEAP imposes, and it made a
-weekday of line items take 46 minutes instead of four."""
+    HTTP 403, server: SICAP
+    "Accesul de la adresa dumneavoastra IP a fost restrictionat. Sistemul a detectat
+     un volum de trafic automat care depaseste limitele de utilizare normala."
+
+An IP-level block, lifted only by contacting their support. The cost of being wrong here
+is not a slow job — it is losing the only source of line-item prices that exists, for
+everyone sharing that address.
+
+4.0 with two workers is roughly 8 records a second: a little over twice the original
+3.0, and far below what drew the block. If more throughput is genuinely needed, ask SEAP
+for it rather than measuring how much they tolerate before objecting."""
 TIMEOUT = 45.0
 RETRIES = 4
 
@@ -50,8 +58,8 @@ RETRIES = 4
 # for tenders; direct acquisitions hit the cap and are paged.
 LIST_PAGE_SIZE = 500
 
-DETAIL_WORKERS = 16
-"""Concurrent detail fetches. See MAX_RPS for why this number and not a larger one."""
+DETAIL_WORKERS = 2
+"""Concurrent detail fetches. Deliberately small; see MAX_RPS for what happened at 16."""
 
 # The list endpoint returns at most 2,000 records for a finalisation date, sorted by
 # finalisation time ascending, and paging stops dead at that point — pageIndex 20 with a
