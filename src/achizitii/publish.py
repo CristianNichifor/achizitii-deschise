@@ -30,6 +30,8 @@ from pathlib import Path
 import duckdb
 
 from .config import ROOT
+from .deflator import deflator_rows
+from .deflator import source as ipc_source
 from .indicators import threshold_for
 
 log = logging.getLogger(__name__)
@@ -64,7 +66,7 @@ class Dataset:
 # value impossible. That is the whole reason for the LEFT JOIN and the NULL branch.
 BASE_VIEW = """
 CREATE OR REPLACE VIEW ad AS
-WITH praguri(an, categorie, prag) AS (VALUES {thresholds})
+WITH praguri(an, categorie, prag, prag_max) AS (VALUES {thresholds})
 SELECT a.an,
        a.cpv,
        a.cpv_denumire,
@@ -77,8 +79,12 @@ SELECT a.an,
        CASE WHEN regexp_matches(a.cpv_denumire, '{numeric_label}')
             THEN NULL ELSE a.cpv_denumire END AS denumire_reala,
        p.prag,
+       -- Where the year has its own ceiling, judge against it. Where it does not, fall
+       -- back to the highest ceiling the category has ever had, so an unscreened year
+       -- is still bounded by something rather than by nothing.
        (TRY_CAST(a.valoare_ron AS DOUBLE) > 0
-        AND (p.prag IS NULL OR TRY_CAST(a.valoare_ron AS DOUBLE) <= p.prag)) AS plauzibil
+        AND TRY_CAST(a.valoare_ron AS DOUBLE) <= COALESCE(p.prag, p.prag_max))
+           AS plauzibil
 FROM achizitii_directe a
 LEFT JOIN praguri p ON p.an = a.an AND p.categorie = a.categorie
 """
@@ -109,12 +115,32 @@ GROUP BY 1
 """
 
 
-def ceilings_by_category_sql() -> str:
-    """A VALUES list of (year, category, ceiling).
+def max_ceiling_for(key: str) -> float | None:
+    """The highest ceiling ever established for a category.
 
-    `thresholds_values_sql` answers for one category at a time; publishing aggregates
-    over every category at once needs them side by side. Categories with no established
-    ceiling are simply absent, which the LEFT JOIN turns into "unscreened".
+    Ceilings are a schedule, and before 2022 the works ceiling was never established at
+    all. Screening those years against nothing is how a 2016 works record of
+    543,595,445,218 RON — a school asphalting job, 98% of that year's works total —
+    ended up inside a published sum.
+
+    A value above the most permissive ceiling the law has EVER had cannot be a lawful
+    direct acquisition in any year. That is a bound we can defend without claiming to
+    know what the 2016 works ceiling was: we are not asserting a ceiling, only that
+    543 billion exceeds every ceiling this law has ever set.
+    """
+    from .indicators import THRESHOLDS
+
+    values = [
+        row.get(key) for row in THRESHOLDS if row.get("verified") and row.get(key)
+    ]
+    return max(values) if values else None
+
+
+def ceilings_by_category_sql() -> str:
+    """A VALUES list of (year, category, ceiling, highest-ever ceiling).
+
+    `prag` is the year's own ceiling and is NULL where none is established. `prag_max`
+    is always present, and is what an otherwise-unscreened row is judged against.
     """
     rows: list[str] = []
     for category, key in (
@@ -122,13 +148,19 @@ def ceilings_by_category_sql() -> str:
         ("servicii", "goods_services"),
         ("lucrari", "works"),
     ):
+        ceiling_ever = max_ceiling_for(key)
+        if ceiling_ever is None:
+            raise RuntimeError(f"no ceiling ever established for {key}")
         for year in YEARS:
             ceiling = threshold_for(date(year, 7, 1), key)
-            if ceiling is not None:
-                rows.append(f"({year}, '{category}', {ceiling})")
+            rows.append(
+                f"({year}, '{category}', "
+                f"{ceiling if ceiling is not None else 'NULL'}, {ceiling_ever})"
+            )
     if not rows:
         raise RuntimeError("no ceilings established for any year; refusing to publish")
     return ", ".join(rows)
+
 
 DATASETS = (
     Dataset(
@@ -462,6 +494,40 @@ def build(out_dir: Path | None = None, *, only: str | None = None) -> dict[str, 
         }
     else:
         log.info("no unit-price archive yet; publishing without price benchmarks")
+
+    # The deflator: published as its own table rather than applied to the figures, so
+    # published numbers stay as-published and the reader picks the base year. Emitted in
+    # both modes because it depends on nothing but a checked-in file.
+    rows = deflator_rows()
+    con.execute(
+        # Cast explicitly: DuckDB infers DECIMAL from numeric literals, which Arrow
+        # then hands the browser as a decimal type that formats badly.
+        "CREATE OR REPLACE TABLE deflator AS SELECT an::INTEGER AS an, "
+        "indice::DOUBLE AS indice, an_baza::INTEGER AS an_baza, "
+        "factor::DOUBLE AS factor, baza, sursa FROM (VALUES "
+        + ", ".join(
+            "({an}, {indice}, {an_baza}, {factor}, '{baza}', '{sursa}')".format(
+                **{k: str(v).replace("'", "''") if isinstance(v, str) else v
+                   for k, v in r.items()}
+            )
+            for r in rows
+        )
+        + ") AS t(an, indice, an_baza, factor, baza, sursa)"
+    )
+    con.execute(
+        f"COPY deflator TO '{out / 'deflator.parquet'}' (FORMAT PARQUET, COMPRESSION ZSTD)"
+    )
+    manifest["deflator"] = {
+        "file": "deflator.parquet",
+        "ani": [r["an"] for r in rows],
+        "an_baza": rows[0]["an_baza"],
+        **{k: v for k, v in ipc_source().items() if k in ("nume", "url", "baza", "publicat")},
+        "nota": (
+            "Sumele publicate sunt NOMINALE. Acest tabel permite exprimarea lor în "
+            "moneda unui an de referință. 2026 nu are indice publicat de Eurostat, deci "
+            "nu poate fi ajustat — rămâne nominal."
+        ),
+    }
 
     # RUTI: the meetings register, published as its own table and deliberately NOT
     # joined to anything. See src/achizitii/ruti.py for why a supplier<->meeting
