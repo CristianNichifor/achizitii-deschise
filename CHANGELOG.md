@@ -6,6 +6,17 @@ Corrections to published data are recorded here, as committed to in
 A correction is applied to the pipeline rather than to the published file, so that it
 survives regeneration; the entry below names the commit that fixed it.
 
+## 2026-09-07 — geography, and an eighth indicator
+
+- **Added** `incetare-01`: 713 awards to suppliers already struck off or in liquidation
+  at the award date (Legea 98/2016 art. 167(1)(b)).
+- **Added** supplier and authority profiles from ANAF — free, no key. 182,530 companies,
+  county for 100% of them.
+- **Added** `judete_an`: 97.9% of the archive placed geographically; 58.0% of awards go
+  to a supplier in the buyer's own county.
+- **Not built**, deliberately: fiscal inactivity and company age. Both are computable and
+  neither is an exclusion ground under Legea 98/2016. See METHODOLOGY.md.
+
 ## 2026-09-07 — contracts published
 
 - **Added** `contracte_an`: 3.6M contracts, split by nature. Framework agreements carry a

@@ -395,6 +395,40 @@ candidates and leaves **713**.
 2018 and since resumed now reads `RELUARE ACTIVITATE`, so awards during that historic gap
 are missed. The error is one-directional — false negatives, never false positives.
 
+### Where the money goes geographically
+
+Neither county is in the procurement exports: supplier locality is missing on 77% of
+rows, and the buyer's county is never given at all. Enriching **both** sides from ANAF
+places **97.9%** of the archive (26,101,780 awards) geographically.
+
+**58.0% of awards go to a supplier registered in the buyer's own county.** The spread is
+wide — Tulcea 72.7%, Ilfov 21.0% — and Ilfov is the sanity check: it surrounds Bucharest,
+so its authorities naturally buy from Bucharest suppliers.
+
+This is **descriptive, not an indicator**. Buying locally is lawful and frequently
+sensible, and there is no article that makes a local share suspicious. The table carries
+counts and values with no threshold and no flag, and a test fails if a column ever
+appears that scores or ranks counties without a legal basis behind it.
+
+Worth noting for anyone reading it: awards and value diverge. Brăila keeps 46.2% of its
+awards local but 84.1% of its value, so the large contracts stay local while the small
+ones do not.
+
+### Two checks that were considered and NOT built
+
+Both would have been easy and neither has a legal basis, so neither ships as an indicator.
+
+**Fiscal inactivity.** 21,327 awards went to suppliers fiscally inactive on the award
+date. But art. 165 covers *unpaid taxes established by a final decision*, and a company
+can be declared inactive for failing to file returns while owing nothing. Published as
+profile data instead.
+
+**Company age.** 40,714 awards went to companies registered less than 90 days earlier —
+a recognisable shell-company pattern. Art. 173 gives the authority the *right to request*
+proof of registration; it does not make youth an exclusion ground, and a new company is
+entitled to compete. The registration date is published so anyone can look; no finding is
+generated from it.
+
 ## Corrections
 
 Errors are expected. The process is documented in full in
