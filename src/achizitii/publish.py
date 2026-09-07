@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+import tempfile
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -432,24 +433,49 @@ def archive_items(out: Path) -> list[str]:
 
     for (day,) in days:
         target = out / PRICES_DIR / f"an={day.year}" / f"luna={day.month:02d}" / f"{day}.parquet"
-        if target.exists():
-            # Immutable by design: a day already archived is never rewritten, so a
-            # re-run cannot corrupt history or churn git. Re-ingesting a day therefore
-            # requires deleting its file first, deliberately.
-            log.info("%s already archived, leaving it alone", day)
-            continue
         target.parent.mkdir(parents=True, exist_ok=True)
-        sql = ARCHIVE_SQL.format(glob=items / "**" / "*.parquet")
-        con.execute(
-            f"COPY ({sql} AND CAST(data_finalizare AS DATE) = DATE '{day}') "
-            f"TO '{target}' (FORMAT PARQUET, COMPRESSION ZSTD)"
-        )
-        rows = con.execute(f"SELECT count(*) FROM read_parquet('{target}')").fetchone()[0]
-        if not rows:
-            target.unlink()
-            continue
+        existing = 0
+        if target.exists():
+            existing = con.execute(
+                f"SELECT count(*) FROM read_parquet('{target}')"
+            ).fetchone()[0]
+
+        # Built in the system temp directory, never beside the archive. A staging file
+        # written next to the day files lands inside the glob that `preturi` reads, and
+        # every archived day gets counted twice.
+        with tempfile.TemporaryDirectory() as staging:
+            candidate = Path(staging) / "day.parquet"
+            sql = ARCHIVE_SQL.format(glob=items / "**" / "*.parquet")
+            con.execute(
+                f"COPY ({sql} AND CAST(data_finalizare AS DATE) = DATE '{day}') "
+                f"TO '{candidate}' (FORMAT PARQUET, COMPRESSION ZSTD)"
+            )
+            rows = con.execute(
+                f"SELECT count(*) FROM read_parquet('{candidate}')"
+            ).fetchone()[0]
+            if not rows:
+                continue
+            if existing and rows < existing:
+                # NEVER SHRINK. A day may GROW — running several times during the day is
+                # how same-day prices arrive at all, and a later run legitimately sees
+                # more. What must never happen is a truncated re-ingest replacing a
+                # complete day with fewer rows.
+                log.warning(
+                    "%s: keeping %d archived rows, refusing a re-ingest with %d",
+                    day, existing, rows,
+                )
+                continue
+            if existing and rows == existing:
+                continue
+            shutil.copy2(candidate, target)
+
         written.append(str(target.relative_to(out)))
-        log.info("archived %s: %s rows, %.2f MB", day, f"{rows:,}", target.stat().st_size / 1e6)
+        log.info(
+            "archived %s: %s rows%s, %.2f MB",
+            day, f"{rows:,}",
+            f" (was {existing:,})" if existing else "",
+            target.stat().st_size / 1e6,
+        )
     con.close()
     return written
 
@@ -464,8 +490,10 @@ UNIT_PRICE_DATASETS = (
         ),
         sql=f"""
         WITH taiat AS (
-            SELECT *, quantile_cont(pret_unitar_ron, 0.01) OVER g AS lo,
-                      quantile_cont(pret_unitar_ron, 0.99) OVER g AS hi
+            SELECT *,
+                   quantile_cont(pret_unitar_ron, 0.01) OVER g AS lo,
+                   quantile_cont(pret_unitar_ron, 0.99) OVER g AS hi,
+                   count(*) OVER g                             AS grup
             FROM preturi
             WHERE comparabil
             WINDOW g AS (PARTITION BY cpv, denumire_key, um, marime_pachet)
@@ -484,7 +512,14 @@ UNIT_PRICE_DATASETS = (
                min(CAST(data_finalizare AS DATE))              AS din,
                max(CAST(data_finalizare AS DATE))              AS pana_la
         FROM taiat
-        WHERE comparabil AND pret_unitar_ron BETWEEN lo AND hi
+        -- Trim outliers only where trimming means anything. On a group of two the 1st
+        -- and 99th percentiles fall BETWEEN the two values — for 21.50 and 23.00 the
+        -- band is 21.515 to 22.985 — so the filter discarded both and the group
+        -- disappeared from the table entirely. Below the size at which a median is
+        -- publishable there is no distribution to trim.
+        WHERE comparabil
+          AND (grup < {MIN_GROUP_FOR_MEDIAN}
+               OR pret_unitar_ron BETWEEN lo AND hi)
         GROUP BY cpv, denumire_key, um, marime_pachet
         """,
     ),
