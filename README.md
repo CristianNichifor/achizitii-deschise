@@ -99,7 +99,7 @@ Then open `site/index.html` over a local HTTP server to query the Parquet with D
 
 ## Risk indicators
 
-Five deterministic indicators over the bulk data. Each declares its **legal basis**, the
+Seven deterministic indicators over the bulk data. Each declares its **legal basis**, the
 scope it applies to, and the dates between which it is valid — because thresholds and
 rules change, and applying today's threshold to 2018 data manufactures findings.
 
@@ -110,6 +110,8 @@ rules change, and applying today's threshold to 2018 data manufactures findings.
 | `divizare-01` | Repeat buys, same object and supplier, short window | Legea 98/2016 art. 11 |
 | `dependenta-01` | One supplier taking most of an authority's budget | Legea 98/2016 art. 2 |
 | `modificare-01` | Contract value rising after signature | Legea 98/2016 art. 221 |
+| `ofertant-unic-01` | Contracts that drew exactly one offer | Legea 98/2016 art. 2 |
+| `estimare-01` | Award far above the authority's own estimate | Legea 98/2016 art. 2 & 9 |
 
 No model is involved in any of them. That is deliberate: a finding computed by
 arithmetic over public fields can be checked by the authority it names.
