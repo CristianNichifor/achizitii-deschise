@@ -106,6 +106,13 @@ def main(argv: list[str] | None = None) -> int:
         "--out", type=Path, default=None,
         help="output directory (default: site/data)",
     )
+    pub.add_argument(
+        "--only", choices=["preturi"], default=None,
+        help=(
+            "rebuild only this section and merge into the existing manifest. "
+            "'preturi' needs no bulk archive, so it works on a GitHub runner"
+        ),
+    )
 
     args = parser.parse_args(argv)
     logging.basicConfig(
@@ -182,7 +189,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "publish":
         from .publish import build
 
-        manifest = build(args.out)
+        manifest = build(args.out, only=args.only)
         _emit(manifest)
         return 0
 
