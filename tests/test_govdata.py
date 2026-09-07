@@ -713,3 +713,47 @@ class TestContractSupplierAliases:
         m = map_columns(["CUI_AC", "OFERTANT", "CUI_OFERTANT"], CONTRACTE)
         assert m["autoritate_cui"] == 0
         assert m["furnizor_cui"] == 2
+
+
+def test_repeated_header_rows_are_dropped() -> None:
+    """A quarterly export sometimes carries its header again, mid-file.
+
+    Nineteen such rows reached the published site as a contracting authority literally
+    named "Autoritate contractanta", holding the CUI "CUI autoritate contractanta" and
+    19 acquisitions. Small, but it is visible on a public page and makes every count
+    fractionally wrong.
+    """
+    from achizitii.govdata import ACHIZITII_DIRECTE, is_repeated_header
+
+    assert is_repeated_header(
+        {
+            "autoritate": "Autoritate contractanta",
+            "autoritate_cui": "CUI autoritate contractanta",
+            "denumire": "Denumire achizitie",
+        },
+        ACHIZITII_DIRECTE,
+    )
+    # Casing and diacritics must not matter — matching is on folded text.
+    assert is_repeated_header(
+        {"autoritate": "AUTORITATE CONTRACTANTĂ", "cpv": "Cod CPV"}, ACHIZITII_DIRECTE
+    )
+
+
+def test_a_single_coincidence_is_not_a_header() -> None:
+    """Two independent columns must each hold their own name.
+
+    One match could be an unfortunately-named organisation; requiring two makes a false
+    positive implausible, and dropping a real acquisition would be worse than keeping a
+    junk row.
+    """
+    from achizitii.govdata import ACHIZITII_DIRECTE, is_repeated_header
+
+    assert not is_repeated_header(
+        {"autoritate": "Autoritate contractanta", "denumire": "Cartuse toner"},
+        ACHIZITII_DIRECTE,
+    )
+    assert not is_repeated_header(
+        {"autoritate": "Comuna Rucar", "denumire": "Cartuse toner", "cpv": "30125100"},
+        ACHIZITII_DIRECTE,
+    )
+    assert not is_repeated_header({}, ACHIZITII_DIRECTE)

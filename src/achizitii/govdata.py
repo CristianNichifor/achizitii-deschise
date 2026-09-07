@@ -915,6 +915,31 @@ def realign_header(
     return candidate, rows[consumed:]
 
 
+def is_repeated_header(rec: dict[str, Any], spec: TableSpec) -> bool:
+    """True when a data row is actually a copy of the header.
+
+    Quarterly exports are sometimes concatenated with their header line intact, so the
+    header arrives again as data. Nineteen such rows reached the published site as a
+    contracting authority literally named "Autoritate contractanta", with the CUI "CUI
+    autoritate contractanta" and 19 acquisitions to its name.
+
+    The test requires at least TWO fields to equal one of the accepted source headers
+    for that same field. One match could be a coincidence — an organisation really can
+    be called something unfortunate — but two independent columns each containing their
+    own column name is a header row, not a record.
+    """
+    matches = 0
+    for canonical, aliases in spec.columns.items():
+        value = rec.get(canonical)
+        if not value:
+            continue
+        if fold(str(value)) in {fold(a) for a in aliases}:
+            matches += 1
+            if matches >= 2:
+                return True
+    return False
+
+
 def to_records(
     header: list[str], rows: list[list[str]], spec: TableSpec, source: str
 ) -> tuple[list[dict[str, Any]], list[str], int]:
@@ -939,6 +964,7 @@ def to_records(
     width = len(header)
     records: list[dict[str, Any]] = []
     malformed = 0
+    repeated_headers = 0
     for row in rows:
         if len(row) > width:
             malformed += 1
@@ -950,8 +976,13 @@ def to_records(
                 rec[canonical] = value or None
         if not any(rec.values()):
             continue
+        if is_repeated_header(rec, spec):
+            repeated_headers += 1
+            continue
         rec["sursa"] = source
         records.append(rec)
+    if repeated_headers:
+        log.info("%s: dropped %d repeated header rows", source, repeated_headers)
     return records, unmapped, malformed
 
 
