@@ -150,6 +150,25 @@ const VIEWS = {
       ORDER BY valoare_totala_ron DESC NULLS LAST
       LIMIT 200`,
   },
+  judete: {
+    label: 'Județe',
+    search: 'județ',
+    money: ['valoare_totala_ron', 'valoare_locala_ron'],
+    note: 'Unde ajung banii geografic. A cumpăra local este perfect legal și adesea ' +
+          'firesc — Ilfov cumpără din București pentru că îl înconjoară. Județul ' +
+          'ambelor părți vine din ANAF; exporturile nu îl conțin.',
+    sql: (f) => `
+      SELECT an, judet_autoritate, n, n_local, pct_local,
+             round(valoare_totala_ron) AS valoare_totala_ron,
+             round(valoare_locala_ron) AS valoare_locala_ron,
+             judete_furnizoare
+      FROM read_parquet(${lit(url('judete_an.parquet'))})
+      WHERE n >= ${f.minn}
+        ${f.an ? `AND an = ${f.an}` : ''}
+        ${f.q ? `AND judet_autoritate ILIKE ${lit('%' + f.q + '%')}` : ''}
+      ORDER BY an DESC, n DESC
+      LIMIT 200`,
+  },
   contracte: {
     label: 'Contracte',
     search: null,
@@ -417,6 +436,8 @@ function selectTab(key, ind) {
     if (key === 'preturi' && !manifest.preturi_unitare) continue;
     if (key === 'ruti' && !manifest.ruti) continue;
     if (key === 'firme' && !manifest.furnizori_profil) continue;
+    if (key === 'judete'
+        && !(manifest.datasets || []).some((d) => d.name === 'judete_an')) continue;
     if (key === 'contracte'
         && !(manifest.datasets || []).some((d) => d.name === 'contracte_an')) continue;
     const b = document.createElement('button');
