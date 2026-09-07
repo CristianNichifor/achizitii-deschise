@@ -84,14 +84,40 @@ def test_every_aggregate_publishes_its_denominator(dataset) -> None:
     )
 
 
-@pytest.mark.parametrize("dataset", DATASETS, ids=lambda d: d.name)
+@pytest.mark.parametrize(
+    "dataset",
+    [d for d in DATASETS if "FROM ad" in d.sql],
+    ids=lambda d: d.name,
+)
 def test_monetary_aggregates_only_use_plausible_values(dataset) -> None:
-    """Sums and medians must never include values above the legal ceiling."""
+    """Sums and medians over direct acquisitions must exclude values above the ceiling.
+
+    Scoped to the datasets built on the `ad` view. Contracts are a different case with
+    no `plauzibil` flag to filter on: a public contract has no legal ceiling — that is
+    what distinguishes it from a direct acquisition — so nothing there can be called
+    impossible on legal grounds. Extreme contract values are disclosed alongside the
+    total instead of excluded; see test_framework_ceilings_are_never_summed and
+    EXTREME_CONTRACT.
+    """
     for match in re.finditer(r"(sum|median|quantile_cont)\([^)]*\)", dataset.sql):
         tail = dataset.sql[match.end() : match.end() + 40]
         assert "FILTER (WHERE plauzibil)" in tail, (
             f"{dataset.name}: {match.group(0)} is not filtered to plausible values"
         )
+
+
+def test_contract_extremes_are_disclosed_not_hidden() -> None:
+    """No legal ceiling exists for contracts, so the tail is reported, not removed.
+
+    301 rows (0.076%) carry 40% of the ordinary-contract total. A reader given only a
+    sum would effectively be reading those rows, so the count and an
+    extremes-excluded total are published beside it.
+    """
+    from achizitii.publish import DATASETS
+
+    contracts = next(d for d in DATASETS if d.name == "contracte_an")
+    assert "n_peste_prag_extrem" in contracts.sql
+    assert "valoare_fara_extreme_ron" in contracts.sql
 
 
 def test_percentiles_are_suppressed_on_small_groups() -> None:
@@ -185,3 +211,44 @@ def test_published_totals_are_physically_plausible() -> None:
         f"{worst[1]} {worst[0]} totals {worst[2]:,.0f} RON — implausible for one year "
         "and one category; an impossible value has reached a published sum"
     )
+
+
+def test_framework_ceilings_are_never_summed() -> None:
+    """A framework publishes a ceiling, repeated on every supplier's row.
+
+    The four largest rows in the archive are the same 177,930,419,250 RON — one
+    authority, four pharmaceutical wholesalers, one framework. Summing them multiplies a
+    single ceiling by the number of suppliers, and then double-counts again against the
+    call-offs placed under it. So frameworks carry a count and a median and no total.
+    """
+    from achizitii.publish import DATASETS
+
+    contracts = next(d for d in DATASETS if d.name == "contracte_an")
+    assert "natura <> 'plafon_acord_cadru'" in contracts.sql, (
+        "the sum must be suppressed for framework ceilings"
+    )
+    # The nature split has to consider call-offs BEFORE frameworks, or every call-off
+    # under a framework would be classified as a ceiling.
+    from achizitii.publish import CONTRACT_NATURE_SQL
+
+    assert CONTRACT_NATURE_SQL.index("subsecvent") < CONTRACT_NATURE_SQL.index("acord-cadru")
+
+
+@pytest.mark.skipif(
+    not Path("site/data/contracte_an.parquet").is_file(), reason="bundle not built"
+)
+def test_published_contracts_suppress_framework_totals() -> None:
+    import duckdb
+
+    con = duckdb.connect()
+    rows = con.execute(
+        """SELECT natura, valoare_totala_ron, n FROM 'site/data/contracte_an.parquet'"""
+    ).fetchall()
+    con.close()
+    assert rows, "no contract rows published"
+    for natura, total, n in rows:
+        assert n > 0
+        if natura == "plafon_acord_cadru":
+            assert total is None, "a framework ceiling was published as a total"
+        else:
+            assert total is not None

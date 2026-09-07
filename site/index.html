@@ -150,6 +150,25 @@ const VIEWS = {
       ORDER BY valoare_totala_ron DESC NULLS LAST
       LIMIT 200`,
   },
+  contracte: {
+    label: 'Contracte',
+    search: null,
+    money: ['valoare_totala_ron', 'valoare_fara_extreme_ron', 'mediana_ron', 'p90_ron', 'maxim_ron'],
+    note: 'Acordurile-cadru publică un PLAFON, repetat pe rândul fiecărui furnizor — ' +
+          'de aceea nu au total, doar număr și mediană. Banii angajați sunt contractele ' +
+          'subsecvente și cele obișnuite. „fara extreme" exclude rândurile peste 1 mld ' +
+          'RON, care sunt puține și domină totalul.',
+    sql: (f) => `
+      SELECT an, natura, n,
+             round(valoare_totala_ron)      AS valoare_totala_ron,
+             round(valoare_fara_extreme_ron) AS valoare_fara_extreme_ron,
+             n_peste_prag_extrem, mediana_ron, p90_ron,
+             round(maxim_ron)               AS maxim_ron,
+             autoritati, furnizori
+      FROM read_parquet(${lit(url('contracte_an.parquet'))})
+      WHERE n >= ${f.minn} ${f.an ? `AND an = ${f.an}` : ''}
+      ORDER BY an DESC, valoare_totala_ron DESC NULLS LAST`,
+  },
   autoritati: {
     label: 'Autorități',
     search: 'denumire sau CUI',
@@ -380,6 +399,8 @@ function selectTab(key, ind) {
     // broken feature rather than an honest "not collected yet".
     if (key === 'preturi' && !manifest.preturi_unitare) continue;
     if (key === 'ruti' && !manifest.ruti) continue;
+    if (key === 'contracte'
+        && !(manifest.datasets || []).some((d) => d.name === 'contracte_an')) continue;
     const b = document.createElement('button');
     b.textContent = v.label; b.dataset.key = key; b.role = 'tab';
     b.onclick = () => selectTab(key);
