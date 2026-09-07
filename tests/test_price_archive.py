@@ -249,3 +249,64 @@ def test_one_off_works_are_not_unit_prices() -> None:
     assert check("Laptop Dell Vostro", "30213100", 1, "buc").comparable
     assert check("Laptop Dell Vostro", "30213100", 15, "buc").comparable
     assert check("Lucrari de asfaltare", "45233222", 1200, "mp").comparable
+
+
+def test_a_day_may_grow_but_never_shrink(tmp_path: Path) -> None:
+    """Same-day re-runs are how fresh prices arrive; truncated ones must not destroy.
+
+    The original rule was "never rewrite", which made hourly collection pointless: the
+    first run of the day would win and every later one be discarded. The rule that
+    actually protects the archive is narrower — a day may GROW, never shrink.
+    """
+    _make_items(tmp_path, rows=[ROWS[0]])
+    archive_items(tmp_path)
+    day = tmp_path / PRICES_DIR / "an=2026" / "luna=09" / "2026-09-04.parquet"
+
+    def rows_in(path: Path) -> int:
+        con = duckdb.connect()
+        n = con.execute(f"SELECT count(*) FROM read_parquet('{path}')").fetchone()[0]
+        con.close()
+        return n
+
+    assert rows_in(day) == 1
+
+    # A later run sees more of the day: it must replace.
+    _make_items(tmp_path, rows=[ROWS[0], ROWS[1]])
+    archive_items(tmp_path)
+    assert rows_in(day) == 2, "a later, fuller run should have replaced the day"
+
+    # A truncated run sees less: it must not.
+    before = day.read_bytes()
+    _make_items(tmp_path, rows=[ROWS[0]])
+    assert archive_items(tmp_path) == []
+    assert day.read_bytes() == before, "a shrinking re-ingest overwrote the archive"
+
+
+def test_staging_files_never_land_in_the_archive(tmp_path: Path) -> None:
+    """The price view globs the archive directory, so anything left there is counted.
+
+    Writing the candidate day beside the real one — as a backup or a staging file —
+    made every archived day appear twice in `preturi_unitare`. The staging file now
+    lives in the system temp directory.
+    """
+    _make_items(tmp_path)
+    archive_items(tmp_path)
+    archive_items(tmp_path)  # a second pass is where a backup file would appear
+
+    found = sorted(p.name for p in (tmp_path / PRICES_DIR).rglob("*") if p.is_file())
+    assert found == ["2026-09-04.parquet", "2026-09-05.parquet"], (
+        f"unexpected files in the archive tree: {found}"
+    )
+
+    # And the benchmark must not double-count.
+    (tmp_path / "manifest.json").write_text(
+        '{"datasets": [], "indicatori": []}', encoding="utf-8"
+    )
+    build(tmp_path, only="preturi")
+    con = duckdb.connect()
+    n = con.execute(
+        f"""SELECT n FROM read_parquet('{tmp_path / 'preturi_unitare.parquet'}')
+            WHERE denumire_key = 'pulpe de pui'"""
+    ).fetchone()[0]
+    con.close()
+    assert n == 2, f"expected the two 'pulpe de pui' rows once each, counted {n}"
