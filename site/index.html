@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>achizitii-deschise — prețuri unitare în achizițiile publice</title>
+<title>achizitii-deschise — achiziții publice din România, interogabile în browser</title>
 <style>
   :root {
     --ink: #101418; --muted: #5c6672; --paper: #fff; --sub: #f4f6f8;
@@ -21,15 +21,21 @@
   h1 { font-size:1.6rem; margin:0 0 .3rem; letter-spacing:-.02em; }
   .sub { color:var(--muted); margin:0 0 1.5rem; }
   .banner { background:var(--sub); border-left:3px solid var(--warn); padding:.7rem .9rem;
-            border-radius:0 6px 6px 0; margin-bottom:1.5rem; font-size:.9rem; }
+            border-radius:0 6px 6px 0; margin-bottom:1.25rem; font-size:.9rem; }
+  .tabs { display:flex; gap:.35rem; flex-wrap:wrap; margin-bottom:1rem;
+          border-bottom:1px solid var(--line); }
+  .tabs button { background:none; color:var(--muted); border:none; border-bottom:2px solid transparent;
+          border-radius:0; padding:.5rem .75rem; cursor:pointer; font-weight:500; }
+  .tabs button[aria-selected="true"] { color:var(--accent); border-bottom-color:var(--accent); }
   .controls { display:flex; gap:.6rem; flex-wrap:wrap; align-items:flex-end; margin-bottom:1rem; }
   label { display:block; font-size:.75rem; text-transform:uppercase; letter-spacing:.04em;
           color:var(--muted); margin-bottom:.25rem; }
   select, input, button { font:inherit; padding:.45rem .6rem; border:1px solid var(--line);
           border-radius:6px; background:var(--paper); color:var(--ink); }
-  button { background:var(--accent); color:#fff; border-color:transparent; cursor:pointer; font-weight:500; }
-  button:disabled { opacity:.5; cursor:progress; }
+  #run { background:var(--accent); color:#fff; border-color:transparent; cursor:pointer; font-weight:500; }
+  #run:disabled { opacity:.5; cursor:progress; }
   #status { color:var(--muted); font-size:.85rem; margin:.75rem 0; }
+  #note { font-size:.85rem; margin:.35rem 0 .75rem; color:var(--warn); }
   .wrap { overflow-x:auto; border:1px solid var(--line); border-radius:8px; }
   table { border-collapse:collapse; width:100%; font-size:.87rem; }
   th, td { padding:.45rem .7rem; text-align:left; border-bottom:1px solid var(--line); white-space:nowrap; }
@@ -48,26 +54,28 @@
 </head>
 <body>
 <main>
-  <h1>Prețuri unitare în achizițiile publice</h1>
-  <p class="sub">Ce a plătit fiecare autoritate pentru <em>o singură bucată</em>. Datele se
-     interoghează direct în browser, cu DuckDB-Wasm peste fișiere Parquet.</p>
+  <h1>Achiziții publice din România</h1>
+  <p class="sub">26,6 milioane de achiziții directe, 2016–2026. Datele se interoghează
+     direct în browser, cu DuckDB-Wasm peste fișiere Parquet — nu există niciun server.</p>
 
   <div class="banner">
-    <strong>Stadiu incipient.</strong> Doar achiziții directe. Prețurile sunt nominale
-    (fără ajustare la inflație), iar liniile marcate necomparabile sunt excluse din
-    statistici. Vezi <a href="https://github.com/CristianNichifor/achizitii-deschise/blob/main/METHODOLOGY.md">METHODOLOGY.md</a>.
+    <strong>Cifrele arată tipare, nu concluzii.</strong> Un total mare sau o poziție
+    dominantă a unui furnizor pot avea explicații perfect legale. Sumele sunt nominale,
+    fără ajustare la inflație, deci creșterile recente sunt supraevaluate.
+    Vezi <a href="https://github.com/CristianNichifor/achizitii-deschise/blob/main/METHODOLOGY.md">METHODOLOGY.md</a>
+    și <a href="https://github.com/CristianNichifor/achizitii-deschise/blob/main/CORRECTIONS.md">dreptul la replică</a>.
   </div>
+
+  <div class="tabs" id="tabs" role="tablist"></div>
 
   <div class="controls">
     <div>
-      <label for="cpv">Cod CPV (obligatoriu)</label>
-      <select id="cpv">
-        <option value="">— toate (comparație nevalidă) —</option>
-      </select>
+      <label for="an">An</label>
+      <select id="an"><option value="">— toți —</option></select>
     </div>
     <div>
-      <label for="q">Caută în denumire</label>
-      <input id="q" placeholder="laptop, toner, ..." size="20">
+      <label for="q" id="qlabel">Caută</label>
+      <input id="q" placeholder="denumire sau CUI…" size="26">
     </div>
     <div>
       <label for="minn">n minim</label>
@@ -77,6 +85,7 @@
   </div>
 
   <p id="status">Se încarcă DuckDB-Wasm…</p>
+  <p id="note"></p>
   <div class="wrap"><table id="out"><thead></thead><tbody></tbody></table></div>
 
   <details>
@@ -85,9 +94,11 @@
   </details>
 
   <footer>
-    Date: SEAP / e-licitatie.ro (Licența pentru Guvernare Deschisă v1.0) ·
-    Publicate sub <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a> ·
-    <a href="https://github.com/CristianNichifor/achizitii-deschise">Cod sursă</a>
+    Date: data.gov.ro, exporturile trimestriale ANAP/ADR (Licența pentru Guvernare
+    Deschisă v1.0) · Publicate sub
+    <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a> ·
+    <a href="https://github.com/CristianNichifor/achizitii-deschise">Cod sursă</a> ·
+    <span id="meta"></span>
   </footer>
 </main>
 
@@ -96,54 +107,110 @@ import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0
 
 const $ = (id) => document.getElementById(id);
 const status = (m) => { $('status').textContent = m; };
-const DATA = new URL('data/items/**/*.parquet', location.href).href;
+const url = (f) => new URL(`data/${f}`, location.href).href;
+const lit = (s) => `'${String(s).replace(/'/g, "''")}'`;
 
-// Median unit price per county, with dispersion and position vs the national median.
-// A plain average would be misleading: procurement prices are heavily right-skewed.
-const SQL = `
-WITH baza AS (
-  SELECT judet, cpv, denumire, pret_unitar_ron
-  FROM read_parquet('${DATA}', hive_partitioning = true)
-  WHERE comparabil                      -- excludes bundles + unknown units
-    AND um = 'buc'                      -- never mix units in one comparison
-    AND pret_unitar_ron > 0
-    {{FILTERS}}
-),
-limite AS (
-  SELECT quantile_cont(pret_unitar_ron, 0.01) lo,
-         quantile_cont(pret_unitar_ron, 0.99) hi
-  FROM baza
-),
-taiat AS (
-  SELECT b.* FROM baza b, limite l
-  WHERE b.pret_unitar_ron BETWEEN l.lo AND l.hi
-),
-pe_judet AS (
-  SELECT judet,
-         count(*)                                        AS n,
-         median(pret_unitar_ron)                          AS median_ron,
-         quantile_cont(pret_unitar_ron, 0.9)
-           / nullif(quantile_cont(pret_unitar_ron, 0.1), 0) AS disp_p90_p10
-  FROM taiat
-  WHERE judet IS NOT NULL
-  GROUP BY judet
-  HAVING count(*) >= {{MINN}}
-)
-SELECT judet, n,
-       round(median_ron, 2)  AS median_ron,
-       round(disp_p90_p10, 2) AS disp_p90_p10,
-       round(median_ron / nullif((SELECT median(median_ron) FROM pe_judet), 0), 2)
-         AS vs_mediana_nationala
-FROM pe_judet
-ORDER BY vs_mediana_nationala DESC NULLS LAST
-LIMIT 100;`;
+// Every view names the columns it selects rather than using *, so a schema change
+// upstream surfaces as an error here instead of silently reshaping the page.
+const VIEWS = {
+  sumar: {
+    label: 'Sumar',
+    search: null,
+    note: 'Totalurile exclud valorile peste plafonul legal al anului — coloana ' +
+          'n_excluse_peste_plafon arată câte.',
+    sql: (f) => `
+      SELECT an, categorie, n, n_valori_folosite,
+             round(valoare_totala_ron)  AS valoare_totala_ron,
+             mediana_ron, n_excluse_peste_plafon
+      FROM read_parquet(${lit(url('sumar_an.parquet'))})
+      WHERE n >= ${f.minn} ${f.an ? `AND an = ${f.an}` : ''}
+      ORDER BY an DESC, valoare_totala_ron DESC NULLS LAST`,
+  },
+  cpv: {
+    label: 'După CPV',
+    search: 'cod sau denumire CPV',
+    note: 'Mediana și percentilele sunt goale sub n=5: pe grupuri mici ele descriu ' +
+          'membrii grupului, nu o piață. Un cod CPV acoperă produse foarte diferite, ' +
+          'deci diferențele nu înseamnă automat preț diferit.',
+    sql: (f) => `
+      SELECT an, cpv, cpv_denumire, n,
+             round(valoare_totala_ron) AS valoare_totala_ron,
+             mediana_ron, p10_ron, p90_ron
+      FROM read_parquet(${lit(url('cpv_an.parquet'))})
+      WHERE n >= ${f.minn}
+        ${f.an ? `AND an = ${f.an}` : ''}
+        ${f.q ? `AND (cpv ILIKE ${lit('%' + f.q + '%')}
+                   OR cpv_denumire ILIKE ${lit('%' + f.q + '%')})` : ''}
+      ORDER BY valoare_totala_ron DESC NULLS LAST
+      LIMIT 200`,
+  },
+  autoritati: {
+    label: 'Autorități',
+    search: 'denumire sau CUI',
+    note: 'Cheltuiala unei autorități nu este un indiciu în sine — instituțiile mari ' +
+          'cumpără mult.',
+    sql: (f) => `
+      SELECT an, autoritate, autoritate_cui, n,
+             round(valoare_totala_ron) AS valoare_totala_ron,
+             furnizori_distincti
+      FROM read_parquet(${lit(url('autoritati_an.parquet'))})
+      WHERE n >= ${f.minn}
+        ${f.an ? `AND an = ${f.an}` : ''}
+        ${f.q ? `AND (autoritate ILIKE ${lit('%' + f.q + '%')}
+                   OR autoritate_cui ILIKE ${lit('%' + f.q + '%')})` : ''}
+      ORDER BY valoare_totala_ron DESC NULLS LAST
+      LIMIT 200`,
+  },
+  furnizori: {
+    label: 'Furnizori',
+    search: 'denumire sau CUI',
+    note: 'autoritati_distincte = câți cumpărători diferiți are furnizorul. Un singur ' +
+          'cumpărător poate însemna specializare, nu neapărat altceva.',
+    sql: (f) => `
+      SELECT an, furnizor, furnizor_cui, n,
+             round(valoare_totala_ron) AS valoare_totala_ron,
+             autoritati_distincte
+      FROM read_parquet(${lit(url('furnizori_an.parquet'))})
+      WHERE n >= ${f.minn}
+        ${f.an ? `AND an = ${f.an}` : ''}
+        ${f.q ? `AND (furnizor ILIKE ${lit('%' + f.q + '%')}
+                   OR furnizor_cui ILIKE ${lit('%' + f.q + '%')})` : ''}
+      ORDER BY valoare_totala_ron DESC NULLS LAST
+      LIMIT 200`,
+  },
+};
+
+let manifest = null, conn = null, current = 'sumar', indicator = null;
+
+function filters() {
+  return {
+    an: /^\d{4}$/.test($('an').value) ? $('an').value : '',
+    q: $('q').value.trim(),
+    minn: Math.max(1, parseInt($('minn').value, 10) || 1),
+  };
+}
+
+function buildSql() {
+  if (current === 'indicatori') {
+    const f = filters();
+    // Only three of the seven findings tables carry a year column; the rest aggregate
+    // across years by nature. Filtering blind would emit SQL that fails to bind, so the
+    // manifest says which columns each file actually has.
+    const hasYear = (indicator.columns || []).includes('an');
+    return `
+      SELECT * FROM read_parquet(${lit(url(indicator.file))})
+      ${f.an && hasYear ? `WHERE an = ${f.an}` : ''}
+      LIMIT 200`;
+  }
+  return VIEWS[current].sql(filters());
+}
 
 function render(table) {
   const head = $('out').tHead, body = $('out').tBodies[0];
   head.innerHTML = ''; body.innerHTML = '';
-  if (!table.numRows) { status('Niciun rezultat. Relaxează filtrele sau scade n minim.'); return; }
-  const cols = table.schema.fields.map(f => f.name);
-  head.insertRow().append(...cols.map(c => {
+  if (!table.numRows) { status('Niciun rezultat. Relaxează filtrele.'); return; }
+  const cols = table.schema.fields.map((f) => f.name);
+  head.insertRow().append(...cols.map((c) => {
     const th = document.createElement('th'); th.textContent = c; return th;
   }));
   for (const row of table.toArray()) {
@@ -151,62 +218,26 @@ function render(table) {
     for (const c of cols) {
       const td = tr.insertCell();
       const v = row[c];
-      td.textContent = v === null || v === undefined ? '—' : v;
+      const numeric = typeof v === 'bigint' || typeof v === 'number';
+      // A year is a number but not a quantity: grouping separators turn 2026 into
+      // "2.026" under ro-RO. Same for anything that is an identifier rather than a count.
+      const isLabel = c === 'an' || c.endsWith('_cui') || c === 'cpv';
+      td.textContent = v === null || v === undefined ? '—'
+        : numeric && !isLabel ? Number(v).toLocaleString('ro-RO') : String(v);
       if (typeof v === 'number' || typeof v === 'bigint') td.className = 'num';
     }
   }
-  status(`${table.numRows} rânduri.`);
+  status(`${table.numRows} rânduri${table.numRows === 200 ? ' (limitat la 200)' : ''}.`);
 }
 
-let conn;
-(async () => {
-  try {
-    const bundle = await duckdb.selectBundle(duckdb.getJsDelivrBundles());
-    const worker = await duckdb.createWorker(bundle.mainWorker);
-    const db = new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger(duckdb.LogLevel.WARNING), worker);
-    await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
-    conn = await db.connect();
-    // Range requests let DuckDB read only the row groups it needs.
-    await conn.query(`SET enable_http_metadata_cache = true; SET http_keep_alive = true;`);
-
-    const cpvs = await conn.query(`
-      SELECT cpv, count(*) n FROM read_parquet('${DATA}', hive_partitioning = true)
-      WHERE cpv IS NOT NULL AND comparabil GROUP BY cpv ORDER BY n DESC LIMIT 300`);
-    const rows = cpvs.toArray();
-    for (const r of rows) {
-      const o = document.createElement('option');
-      o.value = r.cpv; o.textContent = `${r.cpv} (${r.n})`;
-      $('cpv').append(o);
-    }
-    // Default to the best-covered CPV. Never default to "all": comparing the median
-    // price of every 'buc' item across counties measures product mix, not price.
-    if (rows.length) $('cpv').value = rows[0].cpv;
-    $('run').disabled = false;
-    status('Gata.');
-    run();
-  } catch (err) {
-    status(`Eroare la inițializare: ${err.message}. Servește folderul prin HTTP (nu file://).`);
-    console.error(err);
-  }
-})();
-
 async function run() {
+  if (!conn) return;
   $('run').disabled = true;
   status('Se interoghează…');
-  const filters = [];
-  if ($('cpv').value) filters.push(`AND cpv = '${$('cpv').value.replace(/'/g, "''")}'`);
-  if ($('q').value.trim())
-    filters.push(`AND denumire ILIKE '%${$('q').value.trim().replace(/'/g, "''")}%'`);
-  const minn = Math.max(1, parseInt($('minn').value, 10) || 1);
-  const sql = SQL.replace('{{FILTERS}}', filters.join('\n    ')).replace('{{MINN}}', minn);
+  const sql = buildSql();
   $('sql').textContent = sql.trim();
   try {
     render(await conn.query(sql));
-    if (!$('cpv').value && !$('q').value.trim()) {
-      status($('status').textContent + ' ⚠ Fără filtru de CPV aceste mediane compară ' +
-             'produse diferite între ele — măsoară structura achizițiilor, nu prețul. ' +
-             'Alege un cod CPV.');
-    }
   } catch (err) {
     status(`Eroare: ${err.message}`);
     console.error(err);
@@ -215,8 +246,74 @@ async function run() {
   }
 }
 
+function selectTab(key, ind) {
+  current = key;
+  indicator = ind || null;
+  for (const b of $('tabs').children) b.setAttribute('aria-selected', String(b.dataset.key === key));
+  const search = key === 'indicatori' ? null : VIEWS[key].search;
+  $('q').style.display = search ? '' : 'none';
+  $('qlabel').style.display = search ? '' : 'none';
+  if (search) $('qlabel').textContent = search;
+  $('minn').parentElement.style.display = key === 'indicatori' ? 'none' : '';
+  const yearless = key === 'indicatori' && !(indicator.columns || []).includes('an');
+  $('an').parentElement.style.display = yearless ? 'none' : '';
+  $('note').textContent = key === 'indicatori'
+    ? 'Fiecare rând înseamnă „merită verificat”, niciodată „este ilegal”. Temeiul legal ' +
+      'și explicațiile inocente sunt în METHODOLOGY.md.'
+      + (yearless ? ' Acest indicator agregă pe toți anii, deci nu are filtru de an.' : '')
+    : VIEWS[key].note;
+  run();
+}
+
+(async () => {
+  try {
+    manifest = await (await fetch(url('manifest.json'))).json();
+  } catch {
+    status('Lipsește data/manifest.json. Rulează `achizitii publish` și servește folderul prin HTTP.');
+    return;
+  }
+  const ani = manifest.acoperire?.ani ?? [];
+  for (const an of [...ani].reverse()) {
+    const o = document.createElement('option');
+    o.value = an; o.textContent = an;
+    $('an').append(o);
+  }
+  $('meta').textContent =
+    `${(manifest.acoperire?.achizitii_directe_randuri ?? 0).toLocaleString('ro-RO')} achiziții directe`;
+
+  for (const [key, v] of Object.entries(VIEWS)) {
+    const b = document.createElement('button');
+    b.textContent = v.label; b.dataset.key = key; b.role = 'tab';
+    b.onclick = () => selectTab(key);
+    $('tabs').append(b);
+  }
+  for (const ind of manifest.indicatori ?? []) {
+    const b = document.createElement('button');
+    b.textContent = ind.id; b.dataset.key = 'indicatori'; b.role = 'tab';
+    b.onclick = () => selectTab('indicatori', ind);
+    $('tabs').append(b);
+  }
+
+  try {
+    const bundle = await duckdb.selectBundle(duckdb.getJsDelivrBundles());
+    const worker = await duckdb.createWorker(bundle.mainWorker);
+    const db = new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger(duckdb.LogLevel.WARNING), worker);
+    await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+    conn = await db.connect();
+    // Range requests let DuckDB read only the row groups a query needs, so the browser
+    // never downloads a whole file to answer a filtered question.
+    await conn.query('SET enable_http_metadata_cache = true; SET http_keep_alive = true;');
+    $('run').disabled = false;
+    selectTab('sumar');
+  } catch (err) {
+    status(`Eroare la inițializare: ${err.message}. Servește folderul prin HTTP (nu file://).`);
+    console.error(err);
+  }
+})();
+
 $('run').addEventListener('click', run);
 $('q').addEventListener('keydown', (e) => { if (e.key === 'Enter') run(); });
+$('an').addEventListener('change', run);
 </script>
 </body>
 </html>
