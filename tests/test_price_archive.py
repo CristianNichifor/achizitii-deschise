@@ -149,7 +149,32 @@ def test_medians_are_suppressed_below_the_minimum_group(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("dataset", UNIT_PRICE_DATASETS, ids=lambda d: d.name)
 def test_price_groups_hold_unit_and_pack_size_constant(dataset) -> None:
-    """METHODOLOGY.md: comparing across units or pack sizes is meaningless."""
+    """METHODOLOGY.md: comparing across units or pack sizes is meaningless.
+
+    This is the invariant that never bends. Two rows measured in different units, or in
+    packs of different size, cannot be compared no matter what else they share.
+    """
     grouping = dataset.sql.split("GROUP BY")[-1]
-    for column in ("um", "marime_pachet", "cpv"):
+    for column in ("um", "marime_pachet"):
         assert column in grouping, f"{dataset.name} does not hold {column} constant"
+
+
+def test_only_the_product_view_lets_cpv_vary() -> None:
+    """CPV is a filter, not part of the identity — but only where that is intended.
+
+    31.7% of specific-product rows appear under more than one CPV code: "hartie
+    copiator a4" under three, "bonuri valorice carburanti" under codes in different
+    divisions. `preturi_produs` groups those together deliberately and reports how many
+    codes contributed. Every other price view keeps CPV in the key, because merging
+    unrelated products that happen to share wording would be worse than splitting one.
+    """
+    by_name = {d.name: d.sql.split("GROUP BY")[-1] for d in UNIT_PRICE_DATASETS}
+    assert "cpv" not in by_name["preturi_produs"], (
+        "preturi_produs exists to group across CPV codes; keeping cpv in the key "
+        "defeats it"
+    )
+    assert "coduri" in by_name["preturi_produs"] or "count(DISTINCT cpv)" in (
+        next(d.sql for d in UNIT_PRICE_DATASETS if d.name == "preturi_produs")
+    ), "preturi_produs must report how many CPV codes were merged"
+    for name in ("preturi_unitare", "preturi_judet"):
+        assert "cpv" in by_name[name], f"{name} must keep CPV in the group key"

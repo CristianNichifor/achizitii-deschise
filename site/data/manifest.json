@@ -15,21 +15,21 @@
       "name": "cpv_an",
       "file": "cpv_an.parquet",
       "rows": 79542,
-      "bytes": 1934570,
+      "bytes": 1940746,
       "description": "Per CPV code and year: how many acquisitions and what they typically cost. Percentiles are null below n=5."
     },
     {
       "name": "autoritati_an",
       "file": "autoritati_an.parquet",
       "rows": 156223,
-      "bytes": 3501910,
+      "bytes": 3495504,
       "description": "Per contracting authority and year: volume and spend."
     },
     {
       "name": "furnizori_an",
       "file": "furnizori_an.parquet",
       "rows": 751505,
-      "bytes": 15595253,
+      "bytes": 15697882,
       "description": "Per supplier and year: volume, revenue and how many buyers."
     }
   ],
