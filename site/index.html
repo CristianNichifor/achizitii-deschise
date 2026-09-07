@@ -161,6 +161,23 @@ const VIEWS = {
       ORDER BY valoare_totala_ron DESC NULLS LAST
       LIMIT 200`,
   },
+  preturi: {
+    label: 'Prețuri unitare',
+    search: 'produs, cod CPV sau unitate',
+    note: 'Un grup este CPV + produs + unitate + mărime pachet. Nu compara niciodată ' +
+          'peste unități sau mărimi de pachet diferite. Mediana apare doar de la n=5.',
+    // Only offered when the archive exists; see the manifest check below.
+    sql: (f) => `
+      SELECT cpv, denumire_key, um, marime_pachet, n, autoritati, furnizori,
+             mediana_ron, p10_ron, p90_ron, din, pana_la
+      FROM read_parquet(${lit(url('preturi_unitare.parquet'))})
+      WHERE n >= ${f.minn}
+        ${f.q ? `AND (denumire_key ILIKE ${lit('%' + f.q + '%')}
+                   OR cpv ILIKE ${lit('%' + f.q + '%')}
+                   OR um ILIKE ${lit('%' + f.q + '%')})` : ''}
+      ORDER BY n DESC, mediana_ron DESC NULLS LAST
+      LIMIT 200`,
+  },
   furnizori: {
     label: 'Furnizori',
     search: 'denumire sau CUI',
@@ -210,6 +227,12 @@ function render(table) {
   head.innerHTML = ''; body.innerHTML = '';
   if (!table.numRows) { status('Niciun rezultat. Relaxează filtrele.'); return; }
   const cols = table.schema.fields.map((f) => f.name);
+  // Arrow hands back Date32/Date64 as epoch milliseconds, which are numbers as far as
+  // JS is concerned — so a date column rendered "2026-09-04" as "1.788.480.000.000"
+  // under ro-RO grouping. The schema knows the difference; column names do not.
+  const dates = new Set(
+    table.schema.fields.filter((f) => /Date|Timestamp/.test(f.type.toString())).map((f) => f.name),
+  );
   head.insertRow().append(...cols.map((c) => {
     const th = document.createElement('th'); th.textContent = c; return th;
   }));
@@ -223,6 +246,7 @@ function render(table) {
       // "2.026" under ro-RO. Same for anything that is an identifier rather than a count.
       const isLabel = c === 'an' || c.endsWith('_cui') || c === 'cpv';
       td.textContent = v === null || v === undefined ? '—'
+        : dates.has(c) ? new Date(Number(v)).toISOString().slice(0, 10)
         : numeric && !isLabel ? Number(v).toLocaleString('ro-RO') : String(v);
       if (typeof v === 'number' || typeof v === 'bigint') td.className = 'num';
     }
@@ -255,8 +279,16 @@ function selectTab(key, ind) {
   $('qlabel').style.display = search ? '' : 'none';
   if (search) $('qlabel').textContent = search;
   $('minn').parentElement.style.display = key === 'indicatori' ? 'none' : '';
-  const yearless = key === 'indicatori' && !(indicator.columns || []).includes('an');
+  const yearless = key === 'preturi'
+    || (key === 'indicatori' && !(indicator.columns || []).includes('an'));
   $('an').parentElement.style.display = yearless ? 'none' : '';
+  if (key === 'preturi' && manifest.preturi_unitare) {
+    const p = manifest.preturi_unitare;
+    $('note').textContent = VIEWS.preturi.note +
+      ` Arhivă: ${p.randuri.toLocaleString('ro-RO')} linii, ${p.din} → ${p.pana_la}.`;
+    run();
+    return;
+  }
   $('note').textContent = key === 'indicatori'
     ? 'Fiecare rând înseamnă „merită verificat”, niciodată „este ilegal”. Temeiul legal ' +
       'și explicațiile inocente sunt în METHODOLOGY.md.'
@@ -282,6 +314,10 @@ function selectTab(key, ind) {
     `${(manifest.acoperire?.achizitii_directe_randuri ?? 0).toLocaleString('ro-RO')} achiziții directe`;
 
   for (const [key, v] of Object.entries(VIEWS)) {
+    // The unit-price archive grows forwards from the day collection started, so on a
+    // fresh checkout there is nothing to show. Offering an empty tab would read as a
+    // broken feature rather than an honest "not collected yet".
+    if (key === 'preturi' && !manifest.preturi_unitare) continue;
     const b = document.createElement('button');
     b.textContent = v.label; b.dataset.key = key; b.role = 'tab';
     b.onclick = () => selectTab(key);
