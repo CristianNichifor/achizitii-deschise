@@ -291,6 +291,15 @@ NULL_RATE_ALARM = 0.98
 NULL_RATE_HEALTHY = 0.50
 """...but only when a neighbouring year has it at least this populated."""
 
+PARTIAL_LOSS_ALARM = 0.40
+"""A column this much emptier than its best year has probably lost some files.
+
+Near-total loss is obvious; partial loss is not, and it hid a real defect. Supplier
+identity was absent from 51-77% of contracts in 2022-2024 because several quarters
+name the column OFERTANT rather than "Ofertant castigator". Every affected file was
+100% null while the year as a whole sat at 68%, comfortably under the 98% alarm.
+"""
+
 
 def validate() -> dict[str, Any]:
     """Cross-year sanity checks on the ingested tables.
@@ -326,7 +335,9 @@ def validate() -> dict[str, Any]:
             if best > NULL_RATE_HEALTHY:
                 continue  # never populated anywhere — a genuine absence, not a bug
             for year, rate in sorted(rates.items()):
-                if rate < NULL_RATE_ALARM:
+                if rate < NULL_RATE_ALARM and not (
+                    rate >= PARTIAL_LOSS_ALARM and best <= 0.05
+                ):
                     continue
                 known = govdata.is_known_gap(key, col, year)
                 record = {
