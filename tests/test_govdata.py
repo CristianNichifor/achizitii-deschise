@@ -683,3 +683,33 @@ class TestTwoRowHeader:
         header = ["Autoritate contractanta", "Cod CPV"]
         rows = [["PRIMARIA X", "30213100-6"]]
         assert realign_header(header, rows, ACHIZITII_DIRECTE) == (header, rows)
+
+
+class TestContractSupplierAliases:
+    """Supplier identity was missing from 51-77% of contracts in 2022-2024.
+
+    Several quarters name the column OFERTANT rather than "Ofertant castigator", and
+    the CUI variously CUI_OFERTANT or CUI_OF. Without the supplier there is no
+    beneficiary analysis at all.
+    """
+
+    @pytest.mark.parametrize(
+        "header",
+        [
+            ["OFERTANT", "CUI_OFERTANT"],
+            ["OFERTANT", "CUI_OF"],
+            ["Ofertant", "CUI ofertant"],
+            ["Ofertant castigator", "CUI ofertant castigator"],
+            ["Castigator", "CastigatorCUI"],
+        ],
+    )
+    def test_every_observed_spelling_maps(self, header: list[str]) -> None:
+        m = map_columns(header, CONTRACTE)
+        assert "furnizor" in m, header
+        assert "furnizor_cui" in m, header
+
+    def test_authority_cui_not_mistaken_for_supplier(self) -> None:
+        """CUI_AC is the buyer; mapping it as the supplier would invert every finding."""
+        m = map_columns(["CUI_AC", "OFERTANT", "CUI_OFERTANT"], CONTRACTE)
+        assert m["autoritate_cui"] == 0
+        assert m["furnizor_cui"] == 2
