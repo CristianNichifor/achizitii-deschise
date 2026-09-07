@@ -49,8 +49,8 @@
     {
       "name": "preturi_unitare",
       "file": "preturi_unitare.parquet",
-      "rows": 117,
-      "bytes": 5326,
+      "rows": 118,
+      "bytes": 5351,
       "description": "Median unit price per product group. A group is CPV + product key + unit + pack size; percentiles are null below n=5. Never compare across units or pack sizes."
     },
     {
@@ -64,7 +64,7 @@
       "name": "preturi_judet",
       "file": "preturi_judet.parquet",
       "rows": 119,
-      "bytes": 4426,
+      "bytes": 4431,
       "description": "The same groups broken down by county, for comparing what different buyers paid for the same thing. Suppressed below n=5 per county."
     }
   ],

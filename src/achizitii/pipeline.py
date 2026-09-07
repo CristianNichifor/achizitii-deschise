@@ -17,6 +17,7 @@ import hashlib
 import json
 import logging
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
@@ -69,44 +70,92 @@ class AuthorityResolver:
         return self._cache[authority_id]
 
 
+def list_day(
+    client: SeapClient, day: date, limit: int | None = None
+) -> list[dict[str, Any]]:
+    """Every direct acquisition finalised on `day`, gathered category by category.
+
+    The list endpoint hard-caps a query at 2,000 records, sorted by finalisation time
+    ascending, and paging stops there — so a single query for a weekday returned the
+    morning's acquisitions and silently dropped the afternoon's. Measured on
+    2026-06-24: 2,000 returned against 8,940 that actually exist.
+
+    Splitting by CPV category recovers 92.6% of that day (8,272). It is not perfect —
+    one category can still exceed 2,000 on its own — so a category that comes back at
+    exactly the cap is logged as truncated rather than quietly accepted.
+    """
+    iso = day.isoformat()
+    seen: dict[int, dict[str, Any]] = {}
+    truncated: list[int] = []
+
+    for category in config.CPV_CATEGORY_IDS:
+        got = 0
+        page = 0
+        while True:
+            payload = client.direct_acquisition_list(
+                iso, page_index=page, cpv_category_id=category
+            )
+            items = payload.get("items") or []
+            for it in items:
+                da_id = it.get("directAcquisitionId")
+                # Categories are disjoint in principle; de-duplicate anyway rather than
+                # trust that, because a double-counted acquisition is indistinguishable
+                # from a real one downstream.
+                if da_id and da_id not in seen:
+                    seen[da_id] = it
+            got += len(items)
+            if len(items) < config.LIST_PAGE_SIZE:
+                break
+            page += 1
+            if got >= config.LIST_CAP:
+                break
+        if got >= config.LIST_CAP:
+            truncated.append(category)
+        if limit and len(seen) >= limit:
+            break
+
+    if truncated:
+        log.warning(
+            "%s: CPV categories %s hit the %d-record cap; that part of the day is "
+            "incomplete", iso, truncated, config.LIST_CAP,
+        )
+    log.info("%s: %d direct acquisitions across %d categories",
+             iso, len(seen), len(config.CPV_CATEGORY_IDS))
+
+    summaries = list(seen.values())
+    return summaries[:limit] if limit else summaries
+
+
 def fetch_day(
     client: SeapClient, day: date, limit: int | None = None
 ) -> list[dict[str, Any]]:
-    """All direct acquisitions finalized on `day`, with line items, personal data stripped.
+    """Acquisitions for `day` with their line items, personal data stripped.
 
-    The list endpoint caps `total` at 2000, so we page until a short page comes back
-    rather than trusting the reported total. `limit` truncates for smoke tests.
+    Details are fetched concurrently. One call per acquisition is unavoidable — the list
+    carries no line items and no bulk export of them exists anywhere — so the only lever
+    is how many run at once. See config.MAX_RPS for the measurement behind the number.
     """
-    iso = day.isoformat()
-    summaries: list[dict[str, Any]] = []
-    page = 0
-    while True:
-        payload = client.direct_acquisition_list(iso, page_index=page)
-        items = payload.get("items") or []
-        summaries.extend(items)
-        if limit and len(summaries) >= limit:
-            summaries = summaries[:limit]
-            break
-        if len(items) < config.LIST_PAGE_SIZE:
-            break
-        page += 1
-        if page > 200:  # backstop; 100k records in one day would be anomalous
-            log.warning("%s: stopped paging at page %d", iso, page)
-            break
-
-    log.info("%s: %d direct acquisitions", iso, len(summaries))
-
+    summaries = list_day(client, day, limit=limit)
     details: list[dict[str, Any]] = []
-    for summary in summaries:
+
+    def fetch_one(summary: dict[str, Any]) -> dict[str, Any] | None:
         da_id = summary.get("directAcquisitionId")
         if not da_id:
-            continue
+            return None
         try:
             detail = client.direct_acquisition(da_id)
         except Exception as exc:  # noqa: BLE001
             log.warning("detail %s failed: %s", da_id, exc)
-            continue
-        details.append(gdpr.scrub(_merge_summary(detail, summary)))
+            return None
+        return gdpr.scrub(_merge_summary(detail, summary))
+
+    with ThreadPoolExecutor(max_workers=config.DETAIL_WORKERS) as pool:
+        for result in pool.map(fetch_one, summaries):
+            if result is not None:
+                details.append(result)
+
+    if len(details) < len(summaries):
+        log.info("%s: %d of %d details retrieved", day.isoformat(), len(details), len(summaries))
     return details
 
 
