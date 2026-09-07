@@ -15,7 +15,7 @@
       "name": "cpv_an",
       "file": "cpv_an.parquet",
       "rows": 79541,
-      "bytes": 1932682,
+      "bytes": 1914578,
       "description": "Per CPV code and year: how many acquisitions and what they typically cost. Percentiles are null below n=5."
     },
     {
@@ -29,35 +29,35 @@
       "name": "autoritati_an",
       "file": "autoritati_an.parquet",
       "rows": 156222,
-      "bytes": 3498976,
+      "bytes": 3507279,
       "description": "Per contracting authority and year: volume and spend."
     },
     {
       "name": "furnizori_an",
       "file": "furnizori_an.parquet",
       "rows": 751504,
-      "bytes": 15615247,
+      "bytes": 15645888,
       "description": "Per supplier and year: volume, revenue and how many buyers."
     },
     {
       "name": "preturi_unitare",
       "file": "preturi_unitare.parquet",
       "rows": 117,
-      "bytes": 5322,
+      "bytes": 5296,
       "description": "Median unit price per product group. A group is CPV + product key + unit + pack size; percentiles are null below n=5. Never compare across units or pack sizes."
     },
     {
       "name": "preturi_produs",
       "file": "preturi_produs.parquet",
       "rows": 117,
-      "bytes": 4634,
+      "bytes": 4654,
       "description": "The same product across CPV codes: grouped on description, unit and pack size while the code is allowed to vary. `coduri` says how many CPV codes contributed, so a wide spread is visible rather than hidden."
     },
     {
       "name": "preturi_judet",
       "file": "preturi_judet.parquet",
       "rows": 119,
-      "bytes": 4439,
+      "bytes": 4432,
       "description": "The same groups broken down by county, for comparing what different buyers paid for the same thing. Suppressed below n=5 per county."
     }
   ],
@@ -130,6 +130,25 @@
         "nr_contract",
         "data_contract",
         "tip_procedura",
+        "cpv",
+        "valoare_ron"
+      ]
+    },
+    {
+      "id": "incetare-01",
+      "file": "indicatori/incetare-01.parquet",
+      "rows": 713,
+      "columns": [
+        "indicator",
+        "an",
+        "autoritate",
+        "autoritate_cui",
+        "furnizor",
+        "furnizor_anaf",
+        "stare",
+        "stare_de_la",
+        "data_achizitie",
+        "zile_dupa",
         "cpv",
         "valoare_ron"
       ]
