@@ -278,3 +278,31 @@ class TestCeilingReportSeparation:
         from achizitii.indicators import CORROBORATION_MAX_EXCEEDANCE_PCT
 
         assert 0 < CORROBORATION_MAX_EXCEEDANCE_PCT < 5
+
+
+class TestImpossibleValueGuard:
+    """A direct acquisition cannot lawfully exceed the ceiling.
+
+    Values above it are source errors, and they dominate sums: five such rows produced
+    a 114,773,294 RON "cluster" for an authority whose five purchases cannot lawfully
+    exceed 1.35M between them. 2017 contains a record of 29,977,280,000,000 RON.
+    """
+
+    @pytest.mark.parametrize("ident", ["divizare-01", "dependenta-01"])
+    def test_value_summing_indicators_apply_the_ceiling(self, ident: str) -> None:
+        sql = INDICATORS_BY_ID[ident].sql
+        assert "{PRAGURI}" in sql, f"{ident} must join the per-year ceiling table"
+        assert "p.prag" in sql
+
+    def test_prag_01_uses_per_year_ceilings(self) -> None:
+        """The ceiling doubled in 2022; one figure across the archive is wrong for six
+        of the eleven years."""
+        assert "{PRAGURI}" in INDICATORS_BY_ID["prag-01"].sql
+
+    def test_threshold_values_cover_every_year(self) -> None:
+        from achizitii.indicators import thresholds_values_sql
+
+        values = thresholds_values_sql()
+        for year in range(2016, 2027):
+            assert f"({year}," in values, year
+        assert "135060.0" in values and "270120.0" in values
