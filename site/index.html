@@ -73,6 +73,10 @@
       <label for="an">An</label>
       <select id="an"><option value="">— toți —</option></select>
     </div>
+    <div id="wrap-baza">
+      <label for="baza">Ajustare inflație</label>
+      <select id="baza"><option value="">— sume nominale —</option></select>
+    </div>
     <div>
       <label for="q" id="qlabel">Caută</label>
       <input id="q" placeholder="denumire sau CUI…" size="26">
@@ -116,6 +120,7 @@ const VIEWS = {
   sumar: {
     label: 'Sumar',
     search: null,
+    money: ['valoare_totala_ron', 'mediana_ron'],
     note: 'Totalurile exclud valorile peste plafonul legal al anului — coloana ' +
           'n_excluse_peste_plafon arată câte.',
     sql: (f) => `
@@ -129,6 +134,7 @@ const VIEWS = {
   cpv: {
     label: 'După CPV',
     search: 'cod sau denumire CPV',
+    money: ['valoare_totala_ron', 'mediana_ron', 'p10_ron', 'p90_ron'],
     note: 'Mediana și percentilele sunt goale sub n=5: pe grupuri mici ele descriu ' +
           'membrii grupului, nu o piață. Un cod CPV acoperă produse foarte diferite, ' +
           'deci diferențele nu înseamnă automat preț diferit.',
@@ -147,6 +153,7 @@ const VIEWS = {
   autoritati: {
     label: 'Autorități',
     search: 'denumire sau CUI',
+    money: ['valoare_totala_ron'],
     note: 'Cheltuiala unei autorități nu este un indiciu în sine — instituțiile mari ' +
           'cumpără mult.',
     sql: (f) => `
@@ -198,6 +205,7 @@ const VIEWS = {
   furnizori: {
     label: 'Furnizori',
     search: 'denumire sau CUI',
+    money: ['valoare_totala_ron'],
     note: 'autoritati_distincte = câți cumpărători diferiți are furnizorul. Un singur ' +
           'cumpărător poate însemna specializare, nu neapărat altceva.',
     sql: (f) => `
@@ -224,6 +232,33 @@ function filters() {
   };
 }
 
+// Express money in a chosen year's terms by joining the published deflator. Done in
+// SQL rather than in JavaScript so the adjustment stays visible in the query panel
+// below — a reader can see exactly what was multiplied by what.
+//
+// A year with no published index (2026) yields NULL rather than a nominal figure.
+// Mixing adjusted and unadjusted values in one column would be worse than an obvious
+// gap, and the note says so.
+function deflate(sql, view) {
+  const base = $('baza').value;
+  if (!base || !view || !view.money || !manifest.deflator) return sql;
+  const d = lit(url('deflator.parquet'));
+  // REPLACE rather than EXCLUDE + re-add: it substitutes each column in place, so the
+  // table keeps its column order when the reader toggles adjustment on and off.
+  // EXCLUDE moved every money column to the end, which made figures appear to jump
+  // between columns.
+  const cols = view.money
+    .map((c) => `round(t.${c} * b.indice / d.indice, 2) AS ${c}`)
+    .join(',\n             ');
+  return `
+    SELECT t.* REPLACE (
+             ${cols}
+           )
+    FROM (${sql}) t
+    LEFT JOIN read_parquet(${d}) d ON d.an = t.an
+    CROSS JOIN (SELECT indice FROM read_parquet(${d}) WHERE an = ${Number(base)}) b`;
+}
+
 function buildSql() {
   if (current === 'indicatori') {
     const f = filters();
@@ -236,7 +271,7 @@ function buildSql() {
       ${f.an && hasYear ? `WHERE an = ${f.an}` : ''}
       LIMIT 200`;
   }
-  return VIEWS[current].sql(filters());
+  return deflate(VIEWS[current].sql(filters()), VIEWS[current]);
 }
 
 function render(table) {
@@ -295,6 +330,9 @@ function selectTab(key, ind) {
   $('q').style.display = search ? '' : 'none';
   $('qlabel').style.display = search ? '' : 'none';
   if (search) $('qlabel').textContent = search;
+  // Only the year-keyed views can be deflated; the price archive and the meetings
+  // register are not organised by year.
+  $('wrap-baza').style.display = VIEWS[key] && VIEWS[key].money ? '' : 'none';
   $('minn').parentElement.style.display =
     (key === 'indicatori' || key === 'ruti') ? 'none' : '';
   const yearless = key === 'preturi' || key === 'ruti'
@@ -321,6 +359,11 @@ function selectTab(key, ind) {
   } catch {
     status('Lipsește data/manifest.json. Rulează `achizitii publish` și servește folderul prin HTTP.');
     return;
+  }
+  for (const an of [...(manifest.deflator?.ani ?? [])].reverse()) {
+    const o = document.createElement('option');
+    o.value = an; o.textContent = `în lei ${an}`;
+    $('baza').append(o);
   }
   const ani = manifest.acoperire?.ani ?? [];
   for (const an of [...ani].reverse()) {
@@ -369,6 +412,7 @@ function selectTab(key, ind) {
 $('run').addEventListener('click', run);
 $('q').addEventListener('keydown', (e) => { if (e.key === 'Enter') run(); });
 $('an').addEventListener('change', run);
+$('baza').addEventListener('change', run);
 </script>
 </body>
 </html>

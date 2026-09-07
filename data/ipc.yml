@@ -1,0 +1,59 @@
+# Consumer price index, for comparing money across years.
+#
+# Every figure this project publishes is NOMINAL. Romanian prices rose 62% between 2016
+# and 2025, so "2024 spending was higher than 2016" is partly just inflation, and a
+# reader comparing years without adjusting is being misled by arithmetic rather than by
+# anything in the procurement data.
+#
+# WHY EUROSTAT AND NOT INS
+#
+# The national statistics office (INS) publishes its own CPI through TEMPO. Eurostat's
+# HICP is used instead because it is a documented open API with no key, returns 4 KB of
+# JSON, and is methodologically consistent across the whole series. Mixing the two
+# indices would be worse than either: HICP and the national CPI use different baskets,
+# so switching between them mid-series would create a step that looks like inflation.
+#
+# WHY THE VALUES ARE COPIED IN HERE
+#
+# Vendored rather than fetched at build time, for the same reason the brand and unit
+# gazetteers are: a published figure must be reproducible from checked-in data. If
+# Eurostat revises the series — which it does — that revision arrives as a reviewable
+# commit rather than silently changing every number on the site overnight.
+#
+# TO UPDATE
+#
+#   curl 'https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/prc_hicp_aind?format=JSON&geo=RO&coicop=CP00&unit=INX_A_AVG'
+#
+# and record the new `updated` stamp below. A test checks these values still match the
+# shape Eurostat returns.
+
+sursa:
+  nume: "Eurostat — HICP, annual average index (prc_hicp_aind)"
+  url: "https://ec.europa.eu/eurostat/databrowser/view/prc_hicp_aind"
+  api: "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/prc_hicp_aind?format=JSON&geo=RO&coicop=CP00&unit=INX_A_AVG"
+  geo: RO
+  coicop: CP00          # all-items index
+  unit: INX_A_AVG       # annual average index, not the rate of change
+  baza: "2015=100"
+  publicat: "2026-02-06"   # the `updated` field Eurostat returned
+  preluat: "2026-09-07"    # when we copied it
+  licenta: "Eurostat standard reuse policy (attribution)"
+
+# Annual average index, 2015 = 100. Only years the archive covers are listed; Eurostat
+# carries the series back to 1996.
+#
+# 2026 IS DELIBERATELY ABSENT. Eurostat has not published it — the monthly series also
+# stops at 2025-12 — so 2026 spending cannot be deflated and must be reported as nominal.
+# Extrapolating would invent a number; `index_for` returns None and callers refuse,
+# exactly as `threshold_for` does for a year with no established ceiling.
+indici:
+  2016: 98.93
+  2017: 100.00
+  2018: 104.08
+  2019: 108.15
+  2020: 110.67
+  2021: 115.21
+  2022: 129.06
+  2023: 141.64
+  2024: 149.91
+  2025: 160.06
