@@ -6,6 +6,27 @@ Corrections to published data are recorded here, as committed to in
 A correction is applied to the pipeline rather than to the published file, so that it
 survives regeneration; the entry below names the commit that fixed it.
 
+## 2026-09-07 — the site goes live
+
+- **Published** at
+  [cristiannichifor.github.io/achizitii-deschise](https://cristiannichifor.github.io/achizitii-deschise/):
+  four aggregate tables and the seven indicator tables, 24 MB, queried in the browser
+  with DuckDB-Wasm over static Parquet. No server, no running cost.
+- **Corrected**: the ceiling used to screen implausible values is per year *and
+  category*. Applying the goods ceiling to works excluded 52,306 works acquisitions —
+  12% of 2019's works — as impossible when they were very likely lawful. Total
+  exclusions fall from 84,381 to 32,142.
+- **Corrected**: 2022 contract estimates were never missing. One quarter heads the
+  column `VALOARE_ESTIMATA_RON`; the alias was absent, and an explanation about the
+  publisher changing practice mid-year had been written to fit our own bug.
+  `estimare-01` rises from 24,543 findings to 42,631.
+- **Recovered** eight columns lost to typos in the published source (`Numar achizite`,
+  `Dtaa contract`, `Tip inchiere contract`, and five more).
+- **Decided not to ship** the art. 156 brand indicator. On acquisition titles the
+  "sau echivalent" qualifier appears in 0.04% of brand-naming rows, because a title is
+  not a technical specification — the check would flag ~1.66M lawful rows. See
+  METHODOLOGY.md.
+
 ## Corrections to published data
 
 *None yet — no data has been published.*
