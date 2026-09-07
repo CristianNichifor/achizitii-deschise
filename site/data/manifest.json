@@ -15,21 +15,21 @@
       "name": "cpv_an",
       "file": "cpv_an.parquet",
       "rows": 79542,
-      "bytes": 1998441,
+      "bytes": 2012935,
       "description": "Per CPV code and year: how many acquisitions and what they typically cost. Percentiles are null below n=5."
     },
     {
       "name": "autoritati_an",
       "file": "autoritati_an.parquet",
       "rows": 156223,
-      "bytes": 3502110,
+      "bytes": 3487783,
       "description": "Per contracting authority and year: volume and spend."
     },
     {
       "name": "furnizori_an",
       "file": "furnizori_an.parquet",
       "rows": 751505,
-      "bytes": 15608054,
+      "bytes": 15598252,
       "description": "Per supplier and year: volume, revenue and how many buyers."
     }
   ],
@@ -161,6 +161,7 @@
       ]
     }
   ],
+  "arhivat_azi": [],
   "acoperire": {
     "achizitii_directe_randuri": 26672772,
     "valori_folosite": 26406114,
