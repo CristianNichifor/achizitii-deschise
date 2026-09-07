@@ -101,6 +101,7 @@ Every indicator declares four things, and will not run without them:
 | `modificare-01` | Contract value increased after signature | art. 221 |
 | `ofertant-unic-01` | Exactly one offer received | art. 2 |
 | `estimare-01` | Awarded value far above the authority's own estimate | art. 2 and art. 9 |
+| `incetare-01` | Supplier struck off or in liquidation on the award date | art. 167 |
 
 All references are to Legea 98/2016.
 
@@ -360,6 +361,39 @@ impossible on legal grounds. But 301 rows (0.076%) carry 40% of the ordinary-con
 total, and a reader given only a sum would effectively be reading those rows. Each row
 therefore publishes the total, the total excluding values above 1 billion RON, and the
 count of such values, side by side.
+
+### Reading the law before writing the indicator
+
+`incetare-01` exists because the exclusion grounds were read rather than assumed. The
+consolidated text of Legea 98/2016 (legislatie.just.ro) settles which article applies:
+
+- **art. 164** — exclusion for *criminal convictions*. Not this.
+- **art. 165** — exclusion for *unpaid taxes*, established by a final judicial or
+  administrative decision. Also not this: a company can be declared fiscally inactive
+  for failing to file returns while owing nothing.
+- **art. 167(1)(b)** — *"se află în procedura insolvenței sau în lichidare, în
+  supraveghere judiciară sau în încetarea activității"*. This one.
+
+So **fiscal inactivity alone is not a listed exclusion ground**, and the 21,327 awards to
+fiscally inactive suppliers are published as profile data, not as findings. What art.
+167(1)(b) does cover is strike-off and liquidation, which is what the indicator reports.
+
+**Mergers and divisions are excluded.** `DIZOLVARE FARA LICHIDARE(FUZIUNE)` is
+reorganisation, not cessation — the business continues under the absorbing entity.
+Including it reported Orange Romania Communications as a defunct supplier, which is how
+the distinction was noticed.
+
+**The fiscal-code join is corroborated by name.** Matching on CUI alone agrees with the
+supplier name for 88.5% of companies; for the rest the code points at a differently-named
+business — sometimes a rename (*Prisum International Trading* → *PRISUM HEALTHCARE*),
+sometimes something else entirely (*ALLERGY-FARMA* against *UNION BASE LIVESTOCK GROUP*).
+A 90%-reliable join is fine for a county backfill and not fine for a finding that names an
+authority, so a row is published only when the names agree too. That discards 297 of 1,010
+candidates and leaves **713**.
+
+**Known blind spot.** ANAF reports the company's *current* state. A supplier suspended in
+2018 and since resumed now reads `RELUARE ACTIVITATE`, so awards during that historic gap
+are missed. The error is one-directional — false negatives, never false positives.
 
 ## Corrections
 

@@ -15,7 +15,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from . import govdata
-from .config import DATA
+from .config import DATA, ROOT
 
 log = logging.getLogger(__name__)
 
@@ -680,7 +680,17 @@ def _unusable_columns(con: duckdb.DuckDBPyConnection, ind: Any) -> list[str]:
     """Required columns that do not exist, or exist but are entirely NULL."""
     unusable: list[str] = []
     for table in ind.applies_to:
-        for col in ind.requires_columns:
+        for spec in ind.requires_columns:
+            # A requirement may name its table ("achizitii_directe.furnizor_cui") when
+            # the indicator spans more than one. An unqualified name still means "in
+            # every table this indicator uses", which is what the single-table
+            # indicators rely on.
+            if "." in spec:
+                want_table, _, col = spec.partition(".")
+                if want_table != table:
+                    continue
+            else:
+                col = spec
             try:
                 populated = con.execute(
                     f"SELECT count({col}) FROM {table}"
@@ -709,7 +719,16 @@ def run_indicators(
     FINDINGS.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect()
     needed = {k for ind in selected for k in ind.applies_to}
-    available = _register(con, needed)
+    available = _register(con, needed - {"firme"})
+    # Supplier company facts live outside the gov tables, in their own cache. Registered
+    # here so an indicator can declare it like any other dependency and be SKIPPED —
+    # not fail — when the enrichment has not been run.
+    firme_path = Path(ROOT) / "data" / "firme" / "anaf.parquet"
+    if "firme" in needed and firme_path.is_file():
+        con.execute(
+            f"CREATE OR REPLACE VIEW firme AS SELECT * FROM read_parquet('{firme_path}')"
+        )
+        available = available | {"firme"}
 
     results: list[dict[str, Any]] = []
     for ind in selected:
