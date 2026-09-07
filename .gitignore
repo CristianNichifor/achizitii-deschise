@@ -17,6 +17,7 @@ data/gov/
 data/findings/
 data/ruti_raw/
 data/ruti/
+data/firme/
 *.parquet
 *.jsonl
 *.jsonl.gz
