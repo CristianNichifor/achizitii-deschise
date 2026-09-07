@@ -328,6 +328,30 @@ UNIT_PRICE_DATASETS = (
         """,
     ),
     Dataset(
+        name="preturi_produs",
+        description=(
+            "The same product across CPV codes: grouped on description, unit and pack "
+            "size while the code is allowed to vary. `coduri` says how many CPV codes "
+            "contributed, so a wide spread is visible rather than hidden."
+        ),
+        sql=f"""
+        SELECT denumire_key, um, marime_pachet,
+               count(*)                                        AS n,
+               count(DISTINCT cpv)                             AS coduri,
+               mode(cpv)                                       AS cpv_principal,
+               count(DISTINCT autoritate_cui)                  AS autoritati,
+               CASE WHEN count(*) >= {MIN_GROUP_FOR_MEDIAN}
+                    THEN round(median(pret_unitar_ron), 2) END AS mediana_ron,
+               CASE WHEN count(*) >= {MIN_GROUP_FOR_MEDIAN}
+                    THEN round(quantile_cont(pret_unitar_ron, 0.10), 2) END AS p10_ron,
+               CASE WHEN count(*) >= {MIN_GROUP_FOR_MEDIAN}
+                    THEN round(quantile_cont(pret_unitar_ron, 0.90), 2) END AS p90_ron
+        FROM preturi
+        WHERE denumire_key IS NOT NULL AND denumire_key <> ''
+        GROUP BY denumire_key, um, marime_pachet
+        """,
+    ),
+    Dataset(
         name="preturi_judet",
         description=(
             "The same groups broken down by county, for comparing what different buyers "
