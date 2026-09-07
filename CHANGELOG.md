@@ -6,6 +6,18 @@ Corrections to published data are recorded here, as committed to in
 A correction is applied to the pipeline rather than to the published file, so that it
 survives regeneration; the entry below names the commit that fixed it.
 
+## 2026-09-07 — CPV labels were numbers
+
+- **Corrected**: the CPV name column carried the internal `CPV_CODE_ID` instead of a
+  label for 2016–2020 — 14,074,968 rows, 56% of every labelled row. On the published
+  site a quarter of the CPV table showed e.g. `15113` where *Produse de curatenie*
+  belongs, so searching those years by product name returned nothing. Labels are now
+  recovered from 2021+, where the same code carries a real name; 510 codes have none
+  anywhere and are published empty rather than guessed.
+- **Added**: `validate` checks label columns for being *meaningless*, not merely absent.
+  Null-rate checks are blind to a column that is full of the wrong thing, which is how
+  this survived every previous pass.
+
 ## 2026-09-07 — the site goes live
 
 - **Published** at
