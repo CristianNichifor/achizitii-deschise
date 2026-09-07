@@ -129,6 +129,71 @@ def _gazetteer() -> tuple[tuple[str, ...], frozenset[str], dict[str, tuple[str, 
     return brands, not_brands, ambiguous
 
 
+@functools.lru_cache(maxsize=1)
+def _aliases() -> tuple[dict[str, str], dict[str, str]]:
+    """Curated equivalences from `data/cpv_aliases.yml`.
+
+    Returns (cpv code -> canonical code, product head -> canonical head).
+
+    Only the second half needs curation in principle. When two rows say the same words
+    under different CPV codes — 31.7% of specific-product rows in the archive —
+    `preturi_produs` already groups them by letting the CPV vary. Nothing automatic can
+    connect "banci parc" to "mobilier odihna exterior", which share no tokens at all,
+    and that is what the synonym half is for.
+    """
+    path = Path(ROOT) / "data" / "cpv_aliases.yml"
+    if not path.is_file():
+        return {}, {}
+    spec = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
+    codes: dict[str, str] = {}
+    for group in spec.get("coduri_echivalente") or []:
+        canonical = re.sub(r"\D", "", str(group["canonic"]))[:8]
+        for alias in group.get("aliase") or []:
+            codes[re.sub(r"\D", "", str(alias))[:8]] = canonical
+
+    heads: dict[str, str] = {}
+    for group in spec.get("sinonime") or []:
+        canonical = fold(str(group["canonic"]))
+        for alias in group.get("aliase") or []:
+            heads[fold(str(alias))] = canonical
+    return codes, heads
+
+
+def canonical_cpv(cpv: str | None) -> str:
+    """The CPV code a group is reported under, after curated equivalences."""
+    digits = re.sub(r"\D", "", cpv or "")[:8]
+    codes, _ = _aliases()
+    return codes.get(digits, digits)
+
+
+def canonical_head(head: str) -> str:
+    """The product name a group is reported under, after curated synonyms."""
+    _, heads = _aliases()
+    return heads.get(head, head)
+
+
+def apply_synonyms(folded: str) -> str:
+    """Rewrite curated synonym phrases in already-folded text.
+
+    Applied to the whole description BEFORE brand detection and head extraction, which
+    is the only order that works. Two reasons, both found by testing:
+
+      - "hartie xerox a4" would otherwise be read as head "hartie" plus brand "xerox",
+        because Xerox is in the brand gazetteer. Here the phrase is generic usage, and
+        rewriting it to "hartie copiator a4" first avoids splitting it.
+      - a synonym matched against the finished head only fires when the head is exactly
+        the alias; rewriting the text lets the usual token trimming run afterwards.
+
+    Longest phrase first, so a more specific alias wins over one that is its prefix.
+    """
+    _, heads = _aliases()
+    for alias in sorted(heads, key=len, reverse=True):
+        if alias in folded:
+            folded = folded.replace(alias, heads[alias])
+    return folded
+
+
 def find_brands(text: str | None) -> tuple[str, ...]:
     """Commercial brands mentioned, matched on word boundaries.
 
@@ -214,10 +279,11 @@ def product_key(
             uninformative_reason=reason,
         )
 
-    brands = find_brands(raw)
+    # Synonyms are rewritten first: see apply_synonyms for why the order matters.
+    folded = apply_synonyms(fold(raw))
+    brands = find_brands(folded)
     brand = brands[0] if brands else None
 
-    folded = fold(raw)
     head_text = _SPEC_TAIL.split(folded, maxsplit=1)[0]
     # Everything before the brand is what the thing IS; everything after is model and
     # specification, which is too sparse to group on. "Laptop Dell Inspiron 3567" thus
@@ -228,9 +294,11 @@ def product_key(
         t for t in head_text.split()
         if t not in _BOILERPLATE and not t.isdigit() and len(t) > 1
     ]
-    head = " ".join(tokens[:_MAX_HEAD_TOKENS])
+    head = canonical_head(" ".join(tokens[:_MAX_HEAD_TOKENS]))
 
-    cpv_digits = re.sub(r"\D", "", cpv or "")[:8]
+    # Curated equivalences are applied to the CODE too, so paper filed under all three
+    # copier-paper codes forms one group rather than three.
+    cpv_digits = canonical_cpv(cpv)
     parts = [p for p in (cpv_digits or None, head or None, brand) if p]
     return Product(
         head=head,
