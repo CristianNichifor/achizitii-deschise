@@ -11,8 +11,12 @@ that turned out to be unnecessary — every line item already carries a CPV. The
 is the opposite direction: splitting one CPV into groups of genuinely comparable items,
 and joining items that describe the same thing under different CPVs.
 
-This module provides the grouping key. The brand gazetteer it loads does double duty as
-the Legea 98/2016 art. 156 check ("sau echivalent").
+This module provides the grouping key. The brand gazetteer it loads was also intended to
+serve the Legea 98/2016 art. 156 check ("sau echivalent"), but measuring it against the
+archive showed that check cannot be computed from acquisition titles — the qualifier
+appears in 0.04% of brand-naming descriptions, because a title is not a specification
+and has no qualifier to omit. `brand_without_equivalent` is kept for tender documents at
+Stage 4; it is not wired to an indicator. METHODOLOGY.md records the measurement.
 """
 
 from __future__ import annotations
@@ -97,7 +101,8 @@ class Product:
     """Grouping key. Items sharing a key and a unit are price-comparable."""
 
     brands_found: tuple[str, ...]
-    """All brands mentioned, for the art. 156 check."""
+    """All brands mentioned. Kept for grouping and for a future art. 156 check on
+    tender documents; see METHODOLOGY.md for why it is not an indicator today."""
 
     informative: bool = True
     """False when the description names no product; excluded from price grouping."""
@@ -106,14 +111,22 @@ class Product:
 
 
 @functools.lru_cache(maxsize=1)
-def _gazetteer() -> tuple[tuple[str, ...], frozenset[str]]:
+def _gazetteer() -> tuple[tuple[str, ...], frozenset[str], dict[str, tuple[str, ...]]]:
     path = Path(ROOT) / "data" / "branduri.yml"
     spec = yaml.safe_load(path.read_text(encoding="utf-8"))
+    ambiguous = {
+        fold(str(brand)): tuple(fold(str(t)) for t in terms)
+        for brand, terms in (spec.get("ambiguous") or {}).items()
+    }
     brands = tuple(
-        sorted((fold(str(b)) for b in spec.get("brands", [])), key=len, reverse=True)
+        sorted(
+            (fold(str(b)) for b in list(spec.get("brands", [])) + list(ambiguous)),
+            key=len,
+            reverse=True,
+        )
     )
     not_brands = frozenset(fold(str(b)) for b in spec.get("not_brands", []))
-    return brands, not_brands
+    return brands, not_brands, ambiguous
 
 
 def find_brands(text: str | None) -> tuple[str, ...]:
@@ -126,13 +139,19 @@ def find_brands(text: str | None) -> tuple[str, ...]:
     if not text:
         return ()
     folded = fold(text)
-    brands, not_brands = _gazetteer()
+    brands, not_brands, ambiguous = _gazetteer()
     hits: list[tuple[int, str]] = []
     for brand in brands:
         if brand in not_brands:
             continue
         m = re.search(rf"(?<![a-z0-9]){re.escape(brand)}(?![a-z0-9])", folded)
         if not m:
+            continue
+        # Some tokens are real brands that collide with ordinary Romanian words: MAN
+        # abbreviates "manual", LG abbreviates "legume" in produce catalogues, and
+        # "braun" is a colour. Those count only when the text also names something the
+        # brand actually makes. See the measured precision figures in branduri.yml.
+        if brand in ambiguous and not any(t in folded for t in ambiguous[brand]):
             continue
         # Skip a brand already covered by a longer match ("braun" inside "b braun").
         if any(brand in seen and brand != seen for _, seen in hits):
@@ -156,9 +175,14 @@ def mentions_equivalent(text: str | None) -> bool:
 def brand_without_equivalent(text: str | None) -> tuple[str, ...]:
     """Brands named without 'sau echivalent' — the Legea 98/2016 art. 156 signal.
 
-    Returns the offending brands, or empty when none apply. This is deliberately
-    deterministic: a regex and a curated list are auditable by the authority named in a
-    finding, which a model's judgement is not.
+    Deliberately deterministic: a regex and a curated list are auditable by the authority
+    named in a finding, which a model's judgement is not.
+
+    **Only meaningful on tender documents.** Applied to acquisition titles it degenerates
+    into `find_brands`, because those titles carry no technical specification and so no
+    qualifier to omit — measured at 0.04% of brand-naming descriptions. No indicator
+    calls this today, and one should not be added until the *caiet de sarcini* is
+    ingested. See METHODOLOGY.md, "Why there is no brand indicator".
     """
     if mentions_equivalent(text):
         return ()
