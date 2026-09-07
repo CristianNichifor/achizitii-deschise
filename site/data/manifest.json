@@ -1,0 +1,182 @@
+{
+  "publish_version": 1,
+  "min_group_for_median": 5,
+  "licenta_date": "CC BY 4.0",
+  "sursa": "data.gov.ro — exporturile trimestriale ANAP/ADR",
+  "datasets": [
+    {
+      "name": "sumar_an",
+      "file": "sumar_an.parquet",
+      "rows": 41,
+      "bytes": 2193,
+      "description": "Totals per year and category — the top-level view."
+    },
+    {
+      "name": "cpv_an",
+      "file": "cpv_an.parquet",
+      "rows": 79542,
+      "bytes": 1998441,
+      "description": "Per CPV code and year: how many acquisitions and what they typically cost. Percentiles are null below n=5."
+    },
+    {
+      "name": "autoritati_an",
+      "file": "autoritati_an.parquet",
+      "rows": 156223,
+      "bytes": 3502110,
+      "description": "Per contracting authority and year: volume and spend."
+    },
+    {
+      "name": "furnizori_an",
+      "file": "furnizori_an.parquet",
+      "rows": 751505,
+      "bytes": 15608054,
+      "description": "Per supplier and year: volume, revenue and how many buyers."
+    }
+  ],
+  "indicatori": [
+    {
+      "id": "dependenta-01",
+      "file": "indicatori/dependenta-01.parquet",
+      "rows": 33,
+      "columns": [
+        "indicator",
+        "autoritate",
+        "autoritate_cui",
+        "furnizor",
+        "furnizor_cui",
+        "numar_achizitii",
+        "valoare_furnizor_ron",
+        "buget_total_ron",
+        "pondere_pct"
+      ]
+    },
+    {
+      "id": "divizare-01",
+      "file": "indicatori/divizare-01.parquet",
+      "rows": 399,
+      "columns": [
+        "indicator",
+        "autoritate",
+        "autoritate_cui",
+        "cpv",
+        "furnizor",
+        "furnizor_cui",
+        "numar_achizitii",
+        "total_ron",
+        "zile",
+        "prima",
+        "ultima",
+        "ori_peste_plafon"
+      ]
+    },
+    {
+      "id": "estimare-01",
+      "file": "indicatori/estimare-01.parquet",
+      "rows": 42631,
+      "columns": [
+        "indicator",
+        "an",
+        "autoritate",
+        "autoritate_cui",
+        "furnizor",
+        "nr_contract",
+        "data_contract",
+        "cpv",
+        "tip_procedura",
+        "categorie",
+        "valoare_estimata_ron",
+        "valoare_atribuita_ron",
+        "pct_din_estimare"
+      ]
+    },
+    {
+      "id": "fara-competitie-01",
+      "file": "indicatori/fara-competitie-01.parquet",
+      "rows": 10298,
+      "columns": [
+        "indicator",
+        "autoritate",
+        "autoritate_cui",
+        "furnizor",
+        "furnizor_cui",
+        "nr_contract",
+        "data_contract",
+        "tip_procedura",
+        "cpv",
+        "valoare_ron"
+      ]
+    },
+    {
+      "id": "modificare-01",
+      "file": "indicatori/modificare-01.parquet",
+      "rows": 2896,
+      "columns": [
+        "indicator",
+        "autoritate",
+        "autoritate_cui",
+        "nr_contract",
+        "data_contract",
+        "valoare_inainte_ron",
+        "valoare_dupa_ron",
+        "crestere_ron",
+        "crestere_pct",
+        "justificare_publicata"
+      ]
+    },
+    {
+      "id": "ofertant-unic-01",
+      "file": "indicatori/ofertant-unic-01.parquet",
+      "rows": 36989,
+      "columns": [
+        "indicator",
+        "an",
+        "autoritate",
+        "autoritate_cui",
+        "furnizor",
+        "furnizor_cui",
+        "nr_contract",
+        "data_contract",
+        "cpv",
+        "tip_procedura",
+        "categorie",
+        "numar_oferte",
+        "valoare_ron"
+      ]
+    },
+    {
+      "id": "prag-01",
+      "file": "indicatori/prag-01.parquet",
+      "rows": 18658,
+      "columns": [
+        "indicator",
+        "an",
+        "autoritate",
+        "autoritate_cui",
+        "furnizor",
+        "nr_achizitie",
+        "data_publicare",
+        "valoare_ron",
+        "plafon_aplicabil",
+        "pct_din_plafon"
+      ]
+    }
+  ],
+  "acoperire": {
+    "achizitii_directe_randuri": 26672772,
+    "valori_folosite": 26406114,
+    "valori_excluse_peste_plafon": 32142,
+    "ani": [
+      2016,
+      2017,
+      2018,
+      2019,
+      2020,
+      2021,
+      2022,
+      2023,
+      2024,
+      2025,
+      2026
+    ]
+  }
+}
