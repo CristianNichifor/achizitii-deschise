@@ -27,5 +27,10 @@ data/findings/
 !site/data/
 !site/data/**
 
+# ...except the raw line items, which are an ingest staging area. They are ~110 bytes a
+# row against 47 for the slim archive, and they are rewritten on every run. `achizitii
+# publish` distils them into site/data/preturi/, which IS committed and append-only.
+site/data/items/
+
 # State IS committed (it is small and is the resume ledger)
 !state/

@@ -197,16 +197,142 @@ def _write(con: duckdb.DuckDBPyConnection, dataset: Dataset, out: Path) -> dict[
     }
 
 
-def build(out_dir: Path | None = None) -> dict[str, object]:
-    """Write the published bundle and return its manifest."""
-    from .govpipeline import _register
+ITEMS_GLOB = "items/**/*.parquet"
+PRICES_DIR = "preturi"
 
-    out = Path(out_dir or Path(ROOT) / "site" / "data")
-    out.mkdir(parents=True, exist_ok=True)
+# Only the columns a price comparison needs. The raw line items carry 27, including
+# authority and supplier names that are already in the bulk tables; slimming to twelve
+# takes a comparable row from ~110 bytes to 47.
+ARCHIVE_SQL = """
+SELECT ocid, data_finalizare, judet, cpv, denumire_key, um, um_uncefact,
+       marime_pachet, cantitate, pret_unitar_ron, autoritate_cui, furnizor_cui
+FROM read_parquet('{glob}')
+WHERE comparabil AND pret_unitar_ron > 0
+"""
+
+
+def archive_items(out: Path) -> list[str]:
+    """Move freshly ingested line items into the permanent, append-only price archive.
+
+    Unit prices cannot be backfilled. The bulk exports carry no quantities at all, and
+    reconstructing history from SEAP would need a per-record call for every acquisition
+    ever published — millions of requests against a free public endpoint. So the archive
+    can only ever grow forwards from the day collection starts, which makes not losing a
+    day the single most important property here.
+
+    **One file per day, never rewritten.** Appending to a monthly file would make git
+    store a fresh copy of a growing file every day — roughly 150 MB a month by the end
+    rather than the 10 MB the data actually occupies. Day files are written once and
+    then immutable, so a year costs what a year of data costs (~115 MB), and Hive
+    partitioning still lets DuckDB skip whole months.
+    """
+    items = out / "items"
+    if not any(items.rglob("*.parquet")):
+        return []
 
     con = duckdb.connect()
-    _register(con, {"achizitii_directe"})
-    con.execute(BASE_VIEW.format(thresholds=ceilings_by_category_sql()))
+    written: list[str] = []
+    days = con.execute(
+        f"""
+        SELECT DISTINCT CAST(data_finalizare AS DATE) AS zi
+        FROM read_parquet('{items / "**" / "*.parquet"}')
+        WHERE comparabil AND pret_unitar_ron > 0 AND data_finalizare IS NOT NULL
+        ORDER BY 1
+        """
+    ).fetchall()
+
+    for (day,) in days:
+        target = out / PRICES_DIR / f"an={day.year}" / f"luna={day.month:02d}" / f"{day}.parquet"
+        if target.exists():
+            # Immutable by design: a day already archived is never rewritten, so a
+            # re-run cannot corrupt history or churn git. Re-ingesting a day therefore
+            # requires deleting its file first, deliberately.
+            log.info("%s already archived, leaving it alone", day)
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        sql = ARCHIVE_SQL.format(glob=items / "**" / "*.parquet")
+        con.execute(
+            f"COPY ({sql} AND CAST(data_finalizare AS DATE) = DATE '{day}') "
+            f"TO '{target}' (FORMAT PARQUET, COMPRESSION ZSTD)"
+        )
+        rows = con.execute(f"SELECT count(*) FROM read_parquet('{target}')").fetchone()[0]
+        if not rows:
+            target.unlink()
+            continue
+        written.append(str(target.relative_to(out)))
+        log.info("archived %s: %s rows, %.2f MB", day, f"{rows:,}", target.stat().st_size / 1e6)
+    con.close()
+    return written
+
+
+UNIT_PRICE_DATASETS = (
+    Dataset(
+        name="preturi_unitare",
+        description=(
+            "Median unit price per product group. A group is CPV + product key + unit + "
+            f"pack size; percentiles are null below n={MIN_GROUP_FOR_MEDIAN}. Never "
+            "compare across units or pack sizes."
+        ),
+        sql=f"""
+        WITH taiat AS (
+            SELECT *, quantile_cont(pret_unitar_ron, 0.01) OVER g AS lo,
+                      quantile_cont(pret_unitar_ron, 0.99) OVER g AS hi
+            FROM preturi
+            WINDOW g AS (PARTITION BY cpv, denumire_key, um, marime_pachet)
+        )
+        SELECT cpv, denumire_key, um, any_value(um_uncefact) AS um_uncefact,
+               marime_pachet,
+               count(*)                                        AS n,
+               count(DISTINCT autoritate_cui)                  AS autoritati,
+               count(DISTINCT furnizor_cui)                    AS furnizori,
+               CASE WHEN count(*) >= {MIN_GROUP_FOR_MEDIAN}
+                    THEN round(median(pret_unitar_ron), 2) END AS mediana_ron,
+               CASE WHEN count(*) >= {MIN_GROUP_FOR_MEDIAN}
+                    THEN round(quantile_cont(pret_unitar_ron, 0.10), 2) END AS p10_ron,
+               CASE WHEN count(*) >= {MIN_GROUP_FOR_MEDIAN}
+                    THEN round(quantile_cont(pret_unitar_ron, 0.90), 2) END AS p90_ron,
+               min(CAST(data_finalizare AS DATE))              AS din,
+               max(CAST(data_finalizare AS DATE))              AS pana_la
+        FROM taiat
+        WHERE pret_unitar_ron BETWEEN lo AND hi
+        GROUP BY cpv, denumire_key, um, marime_pachet
+        """,
+    ),
+    Dataset(
+        name="preturi_judet",
+        description=(
+            "The same groups broken down by county, for comparing what different buyers "
+            "paid for the same thing. Suppressed below "
+            f"n={MIN_GROUP_FOR_MEDIAN} per county."
+        ),
+        sql=f"""
+        SELECT cpv, denumire_key, um, marime_pachet, judet,
+               count(*)                                        AS n,
+               CASE WHEN count(*) >= {MIN_GROUP_FOR_MEDIAN}
+                    THEN round(median(pret_unitar_ron), 2) END AS mediana_ron
+        FROM preturi
+        WHERE judet IS NOT NULL
+        GROUP BY cpv, denumire_key, um, marime_pachet, judet
+        """,
+    ),
+)
+
+
+def build(out_dir: Path | None = None, *, only: str | None = None) -> dict[str, object]:
+    """Write the published bundle and return its manifest.
+
+    `only="preturi"` rebuilds just the unit-price section and merges it into the
+    manifest already on disk. That mode exists because the daily job runs on a GitHub
+    runner, where the bulk archive is NOT available — data.gov.ro refuses connections
+    from GitHub and Azure IP ranges. Regenerating the whole manifest there would drop
+    every bulk dataset from it and silently strip them off the published site, even
+    though the Parquet files themselves were still sitting in the repo.
+    """
+    out = Path(out_dir or Path(ROOT) / "site" / "data")
+    out.mkdir(parents=True, exist_ok=True)
+    prices_only = only == "preturi"
+
+    con = duckdb.connect()
 
     manifest: dict[str, object] = {
         "publish_version": PUBLISH_VERSION,
@@ -217,9 +343,66 @@ def build(out_dir: Path | None = None) -> dict[str, object]:
         "indicatori": [],
     }
 
-    manifest["datasets"] = [_write(con, d, out) for d in DATASETS]
+    existing_path = out / "manifest.json"
+    if prices_only:
+        if not existing_path.is_file():
+            raise RuntimeError(
+                "--only preturi merges into an existing manifest, and none was found. "
+                "Run a full `achizitii publish` first."
+            )
+        manifest = json.loads(existing_path.read_text(encoding="utf-8"))
+        # Drop only the price datasets; everything else is carried over untouched.
+        names = {d.name for d in UNIT_PRICE_DATASETS}
+        manifest["datasets"] = [
+            d for d in manifest.get("datasets", []) if d["name"] not in names
+        ]
+    else:
+        from .govpipeline import _register
 
-    # Coverage and the exclusion count, so a reader can see what was left out.
+        _register(con, {"achizitii_directe"})
+        con.execute(BASE_VIEW.format(thresholds=ceilings_by_category_sql()))
+        manifest["datasets"] = [_write(con, d, out) for d in DATASETS]
+
+    # Unit prices: the archive is append-only and starts the day collection began, so it
+    # is normal for this to be empty on a fresh checkout. An absent section is honest;
+    # an empty table presented as a benchmark would not be.
+    manifest["arhivat_azi"] = archive_items(out)
+    prices = sorted((out / PRICES_DIR).rglob("*.parquet"))
+    if prices:
+        con.execute(
+            "CREATE OR REPLACE VIEW preturi AS "
+            f"SELECT * FROM read_parquet('{out / PRICES_DIR / '**' / '*.parquet'}', "
+            "hive_partitioning = true)"
+        )
+        manifest["datasets"] += [_write(con, d, out) for d in UNIT_PRICE_DATASETS]
+        rows, first, last = con.execute(
+            "SELECT count(*), min(CAST(data_finalizare AS DATE)), "
+            "max(CAST(data_finalizare AS DATE)) FROM preturi"
+        ).fetchone()
+        manifest["preturi_unitare"] = {
+            "randuri": rows,
+            "zile_arhivate": len(prices),
+            "din": str(first),
+            "pana_la": str(last),
+            "nota": (
+                "Prețurile unitare nu pot fi reconstituite retroactiv: exporturile în "
+                "masă nu conțin cantități. Arhiva crește doar înainte, de la prima zi "
+                "colectată."
+            ),
+        }
+    else:
+        log.info("no unit-price archive yet; publishing without price benchmarks")
+
+    # Coverage and the exclusion count, so a reader can see what was left out. The
+    # `ad` view only exists when the bulk archive was registered; in prices-only mode
+    # the figures already in the manifest are still correct and are left alone.
+    if prices_only:
+        (out / "manifest.json").write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        con.close()
+        return manifest
+
     total, plausible, excluded, years = con.execute(
         """
         SELECT count(*),
