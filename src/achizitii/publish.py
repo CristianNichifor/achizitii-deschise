@@ -607,6 +607,41 @@ def build(out_dir: Path | None = None, *, only: str | None = None) -> dict[str, 
         ),
     }
 
+    # Supplier company facts from ANAF. Published as a profile table rather than
+    # joined into the aggregates: it is a fact about a company, not about a purchase,
+    # and it is refreshed on a different cadence from the procurement archive.
+    #
+    # This is the county backfill the archive has always needed — furnizor_localitate is
+    # missing on 77% of rows, and ANAF answers for essentially every supplier it knows.
+    firme_src = Path(ROOT) / "data" / "firme" / "anaf.parquet"
+    if firme_src.is_file():
+        con.execute(
+            f"""COPY (SELECT cui, denumire, judet, cod_judet_auto, data_inregistrare,
+                             inactiv, data_inactivare, data_radiere, platitor_tva,
+                             verificat_la
+                      FROM read_parquet('{firme_src}') ORDER BY cui)
+                TO '{out / "furnizori_profil.parquet"}'
+                (FORMAT PARQUET, COMPRESSION ZSTD)"""
+        )
+        rows, with_county, inactive, struck = con.execute(
+            f"""SELECT count(*), count(judet), count(*) FILTER (WHERE inactiv),
+                       count(*) FILTER (WHERE data_radiere IS NOT NULL)
+                FROM read_parquet('{out / "furnizori_profil.parquet"}')"""
+        ).fetchone()
+        manifest["furnizori_profil"] = {
+            "file": "furnizori_profil.parquet",
+            "firme": rows,
+            "cu_judet": with_county,
+            "inactive_fiscal": inactive,
+            "radiate": struck,
+            "sursa": "ANAF — webservicesp.anaf.ro (serviciu public, fără cheie)",
+            "nota": (
+                "Statutul fiscal este cel de la data verificării, NU de la data "
+                "achiziției. O firmă inactivă azi putea fi perfect activă când a "
+                "câștigat contractul."
+            ),
+        }
+
     # RUTI: the meetings register, published as its own table and deliberately NOT
     # joined to anything. See src/achizitii/ruti.py for why a supplier<->meeting
     # indicator would be indefensible on this data.
