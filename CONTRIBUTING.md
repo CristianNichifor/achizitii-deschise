@@ -30,6 +30,23 @@ Romanian buyers describe identical goods differently — *"bănci parc"* and *"m
 exterior"* are the same thing. Curated aliases beat any fuzzy-matching heuristic. Start
 with high-value items; they matter most and are easiest to verify.
 
+**Add synonyms, not hierarchy.** Measuring the archive first showed that most codes which
+*look* related are not synonyms, and encoding them would corrupt a benchmark:
+
+| Pattern | Example | Why not |
+|---|---|---|
+| Hierarchy | `03221400` Varză / `03221410` Varză albă | A kind of, not a name for — and CPV already encodes it in the code prefix |
+| Catch-alls | `33690000` Diverse medicamente absorbing specific drug classes | Buyers reach for the general code; co-occurrence is not equivalence |
+| Mis-filing | `30125100` toner / `35331500` cartridges | `35331500` is **ammunition** |
+
+The case that genuinely needs you is the same object under *different words*, because
+nothing automatic can connect phrases that share no tokens. Where the words already match
+and only the code differs — 31.7% of specific-product rows — `preturi_produs` groups them
+without curation.
+
+Every group must say **how you checked**; a test rejects one that does not, and another
+rejects a parent/child pair outright.
+
 ### 3. Corrections
 
 If a record here misrepresents a real purchase, open an issue with the `ocid` and what is
