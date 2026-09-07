@@ -391,6 +391,30 @@ def validate() -> dict[str, Any]:
         if suspect:
             tables["implausible_award_vs_estimate"] = suspect
 
+    # Values above the legal ceiling cannot be lawful direct acquisitions, so they are
+    # excluded from any indicator that sums. Counted here so the exclusion is visible
+    # rather than silent: 2017 contains a record of 29,977,280,000,000 RON.
+    if "achizitii_directe" in available:
+        from .indicators import thresholds_values_sql
+
+        try:
+            impossible = con.execute(
+                f"""
+                WITH praguri(an, prag) AS (VALUES {thresholds_values_sql()})
+                SELECT a.an, count(*) n,
+                       round(max(TRY_CAST(a.valoare_ron AS DOUBLE))) maxim
+                FROM achizitii_directe a JOIN praguri p ON p.an = a.an
+                WHERE a.categorie IN ('furnizare','servicii')
+                  AND TRY_CAST(a.valoare_ron AS DOUBLE) > p.prag
+                GROUP BY a.an ORDER BY a.an
+                """
+            ).fetch_arrow_table().to_pylist()
+        except duckdb.Error as exc:
+            log.warning("impossible-value check failed: %s", exc)
+            impossible = []
+        if impossible:
+            tables["values_above_legal_ceiling"] = impossible
+
     con.close()
     return {
         "tables": tables,
