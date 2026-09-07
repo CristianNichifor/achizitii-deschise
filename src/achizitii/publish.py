@@ -33,7 +33,7 @@ import duckdb
 from .config import ROOT
 from .deflator import deflator_rows
 from .deflator import source as ipc_source
-from .indicators import threshold_for
+from .indicators import INDICATORS_BY_ID, threshold_for
 
 log = logging.getLogger(__name__)
 
@@ -804,12 +804,19 @@ def build(out_dir: Path | None = None, *, only: str | None = None) -> dict[str, 
                     f"SELECT * FROM read_parquet('{dest / src.name}') LIMIT 0"
                 ).description
             ]
+            # The human name and description already exist on the Indicator; the site
+            # was showing the bare id ("dependenta-01"), which means nothing to a reader
+            # who has not read METHODOLOGY.md.
+            meta = INDICATORS_BY_ID.get(src.stem)
             manifest["indicatori"].append(  # type: ignore[union-attr]
                 {
                     "id": src.stem,
                     "file": f"indicatori/{src.name}",
                     "rows": rows,
                     "columns": columns,
+                    "nume": meta.name_ro if meta else src.stem,
+                    "descriere": meta.description_ro if meta else "",
+                    "temei": meta.legal_basis if meta else "",
                 }
             )
     else:
