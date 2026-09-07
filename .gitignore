@@ -15,10 +15,17 @@ data/marts/
 data/gov_raw/
 data/gov/
 data/findings/
-site/data/
 *.parquet
 *.jsonl
 *.jsonl.gz
+
+# ...but site/data/ IS committed. It is the published deliverable — ~24 MB of
+# aggregates, not raw data — and it cannot be rebuilt in CI, because data.gov.ro
+# refuses connections from GitHub and Azure IP ranges (see docs/sources.md). A locally
+# generated bundle is the only way Pages can serve anything. The negation has to come
+# after `*.parquet`, and the directory has to be unignored before its contents.
+!site/data/
+!site/data/**
 
 # State IS committed (it is small and is the resume ledger)
 !state/
