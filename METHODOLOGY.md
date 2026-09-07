@@ -194,10 +194,73 @@ the file's actual headers before the explanation was written down.
 - **Corruption Risk Index** composite scoring (Government Transparency Institute). The
   intent remains to adopt a published methodology rather than invent a score, but the
   missing bidder data blocks a faithful implementation today.
-- **Brand-without-"sau echivalent"** in technical specifications (art. 156). Deterministic
-  — a curated brand gazetteer plus one regex — but it needs the tender documents, which
-  are Stage 4.
+- **Brand-without-"sau echivalent"** in technical specifications (art. 156). The
+  gazetteer and matcher are built and tested, but the indicator is **deliberately not
+  shipped**, for reasons stronger than "the documents are Stage 4". See below.
 - **Ownership links** between suppliers and officials. Requires ONRC.
+
+### Why there is no brand indicator (a measured negative result)
+
+`data/branduri.yml` and `achizitii.produs` were built to support an art. 156 check:
+a technical specification that names a make without "sau echivalent" restricts
+competition unlawfully. Running the matcher over the direct-acquisition archive before
+writing the indicator showed it should not be published at all.
+
+Measured on a 300,000-row sample of `denumire`:
+
+| Measure | Result |
+|---|---|
+| Descriptions naming at least one brand | 6.2% — about **1.66 million** rows archive-wide |
+| ...that are consumables, parts or repairs | **44.7%** |
+| ...that say "sau echivalent" | **0.04%** (7 rows) |
+
+Each number kills a different assumption.
+
+**The qualifier is absent because the document is absent.** "Sau echivalent" appears in
+0.04% of brand-naming descriptions — not because buyers omit it, but because a direct
+acquisition has no *documentație de atribuire* to omit it from. `denumire` averages 89
+characters; it is an object title, not a technical specification. So
+`brand_without_equivalent` would return the same rows as `find_brands`, and the
+indicator would reduce to "mentions a brand" while being *presented* as a legal finding.
+
+**Naming the make is frequently the lawful option.** Nearly half the hits are toner for
+an existing printer, a part for a specific vehicle, or a service on a named machine —
+"Cartus toner Canon CRG-737", "Reparatie Ford Focus". Art. 156(2) permits identifying a
+make where the object cannot otherwise be described precisely. Flagging these would
+invert the law it claims to enforce.
+
+**The scale is the accusation.** 1.66 million rows, each naming a real contracting
+authority and a real supplier, is not an indicator — it is an unreviewable list. It
+would also swamp the six indicators that *are* defensible.
+
+The matcher is kept, because the gazetteer's other purpose stands: brand is the
+strongest available signal for splitting a CPV code into price-comparable groups. If
+tender documents are ingested at Stage 4, the check becomes meaningful — there the
+qualifier is genuinely expected, and its absence genuinely means something.
+
+The general rule this project takes from it: **an indicator must be tested against the
+data before its legal basis is written down.** A provision that reads perfectly can
+still have no computable counterpart in the available fields.
+
+### Ambiguous brand tokens
+
+Brand matching is word-boundary exact, but several real brands are spelled like ordinary
+Romanian words. Bare matching was right only 24.5% of the time for `man` and 43.7% for
+`lg`:
+
+| Token | Plausible | What it usually is instead |
+|---|---|---|
+| `man` | 24.5% | *manual* — "DET.MAN.20KG", "GAR.MAN.+SILD" |
+| `lg` | 43.7% | *legume* — "LEUSTEAN RO. LG. C.I" |
+| `braun` | 63.9% | the colour — "PROSOP ISABEL BRAUN 70X100CM" |
+| `bucovina` | 68.4% | the region — "Centrul Cultural Bucovina" |
+| `tesa` | 70.4% | the staff category *tehnic, economic, socio-administrativ* |
+| `dorna` | 85.4% | the town — "Transport ... la Vatra Dorna si retur" |
+
+These now count only when the description also names something the brand actually makes,
+which removed 934 false matches from a 600,000-row sample. The trade is recall for
+precision, which is the right direction when the output feeds price groups: a wrongly
+attributed brand splits or merges groups that should not be.
 
 ## Corrections
 
