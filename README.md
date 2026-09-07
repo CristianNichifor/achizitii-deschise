@@ -6,9 +6,13 @@ Open data on Romanian public procurement. This project publishes the **unit pric
 individual line items** — what a single laptop, toner cartridge or hour of guard duty
 actually cost — so that prices paid by different public buyers can be compared.
 
-> **Status: early. Stage 0 (working vertical slice).**
-> Numbers produced by this repository have not yet been validated at scale. Do not cite
-> them yet.
+**👉 [cristiannichifor.github.io/achizitii-deschise](https://cristiannichifor.github.io/achizitii-deschise/)**
+— 26,6 milioane de achiziții directe, interogabile direct în browser. Fără server:
+DuckDB-Wasm citește fișiere Parquet statice.
+
+> **Status: early.** The archive is complete for 2016–2026 and the risk indicators run,
+> but figures have not been independently validated. Treat them as a starting point for
+> checking a record against the source, not as a citable statistic.
 
 ## Why this exists
 
@@ -33,11 +37,19 @@ Two things make that possible and nobody has done it:
 ## What it does
 
 ```
-SEAP api-pub  ──►  raw/     immutable archive, personal data stripped
-                   core/    OCDS 1.1 releases
-                   marts/   normalised line items (Parquet)
-                            └─►  static site + DuckDB-Wasm, queried in the browser
+SEAP api-pub   ──►  raw/     immutable archive, personal data stripped
+                    core/    OCDS 1.1 releases
+                    marts/   normalised line items (Parquet)
+
+data.gov.ro    ──►  gov/     11 years, 5 tables, 30M rows
+                    findings/  risk indicators
+                            └─►  site/data/  aggregates + findings, 24 MB
+                                 └─►  GitHub Pages + DuckDB-Wasm, queried in the browser
 ```
+
+The published bundle is aggregates, not raw rows: the archive is 1.5 GB and Pages caps a
+site at 1 GB, but more to the point a browser has no use for 26.7M rows it must download
+before answering anything. Build it with `achizitii publish`.
 
 The whole pipeline runs in GitHub Actions and publishes static files. There is no
 server and no running cost.
@@ -93,9 +105,11 @@ python -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/achizitii gov --years 2016-2026       # full backfill
 .venv/bin/achizitii indicators --list           # what each rule checks, and its legal basis
 .venv/bin/achizitii indicators                  # run them, write findings to data/findings/
-```
 
-Then open `site/index.html` over a local HTTP server to query the Parquet with DuckDB-Wasm.
+# --- the published site ---
+.venv/bin/achizitii publish                     # build site/data/ (aggregates + findings)
+python3 -m http.server -d site 8000             # then open http://localhost:8000
+```
 
 ## Risk indicators
 
@@ -150,6 +164,7 @@ responses is stripped before anything is written to `core/`. See `src/achizitii/
 ## Roadmap
 
 - [x] **Stage 0** — direct acquisitions → line items → normalisation → Parquet → browser
+- [x] **Published site** — aggregates + findings on GitHub Pages, queried with DuckDB-Wasm
 - [ ] **Stage 1** — full 2016→now backfill via data.gov.ro; CPV alias table; CPI deflation
 - [ ] **Stage 2** — registered OCID prefix, OCDS validator-clean, tagged release + Zenodo DOI
 - [ ] **Stage 3** — corruption risk indicators, methodology doc, right-of-reply process
