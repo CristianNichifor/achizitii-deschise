@@ -176,3 +176,27 @@ fuzzy string matching against 751,505 supplier names, over institutions that mak
 fire almost never and would name real individuals on the strength of a string match. A
 meeting is lawful and the register exists to make it visible — its presence in this
 dataset says nothing about any contract. A test enforces the separation.
+
+
+## ANAF — company facts (free, no key)
+
+`https://webservicesp.anaf.ro/api/PlatitorTvaRest/v9/tva`
+
+POST up to **100 fiscal codes** per request. A real batch of 100 answered in 0.8s.
+
+| | |
+|---|---|
+| Suppliers matched | **165,494 of 166,704 (99.3%)** |
+| With county | **165,487 (100%)** — the archive is missing supplier locality on 77% of rows |
+| Fiscally inactive | 11,207 |
+| Struck off | 1,858 |
+| Full pass | ~1,667 requests, ~30 min at 1 req/s |
+
+**Status is point-in-time.** ANAF evaluates `statusInactivi` relative to the date you
+ask about — the same company reads inactive today and active as of 2022. The stored
+dates are absolute, so an award is judged against `data_inactivare` /
+`data_reactivare` / `data_radiere` versus the award date, never against today's flag.
+
+**Not available anywhere open: ownership.** ONRC sells it, and `beneficiari reali`
+returns zero datasets on data.gov.ro — public access to beneficial-ownership registers
+was restricted EU-wide after the 2022 CJEU ruling.
