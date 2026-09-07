@@ -1,0 +1,123 @@
+# Making the same product comparable when it is filed or described differently.
+#
+# This file was promised by README.md and CONTRIBUTING.md long before it existed, and
+# writing it started by measuring what the archive actually does rather than by guessing
+# what buyers might type. That measurement changed its shape, so read this first.
+#
+# THE MEASUREMENT
+#
+# Over a 600,000-row sample of 2021+ direct acquisitions, 31.7% of rows with a specific
+# product description share that description with at least one OTHER CPV code — 5,586
+# distinct products. "hartie copiator a4" is filed under 30197642, 30197643 AND 30192700.
+# "bonuri valorice carburanti" appears under 22458000 (printed matter) and 09100000
+# (fuels), which are not even the same division.
+#
+# That is handled WITHOUT this file: `preturi_produs` groups on the product description,
+# unit and pack size and lets the CPV vary, reporting how many codes contributed. No
+# curation is needed to notice that two rows say the same words.
+#
+# What curation IS needed for is the opposite case, and it is the one CONTRIBUTING
+# describes: the same object under DIFFERENT words. "banci parc" and "mobilier odihna
+# exterior" share no tokens, so nothing automatic will ever group them.
+#
+# WHAT DOES NOT BELONG HERE
+#
+# Three patterns look like synonymy and are not. Each was found in the data and each
+# would corrupt a benchmark if encoded as an alias:
+#
+#   Hierarchy      03221400 "Varza" vs 03221410 "Varza alba". The relationship is
+#                  already in the code — they share a prefix — and white cabbage is a
+#                  KIND of cabbage, not another name for it.
+#   Catch-alls     33690000 "Diverse medicamente" absorbs specific classes such as
+#                  33661600 "Psihoanaleptice". Buyers reach for the general code; that
+#                  makes the codes co-occur, not equivalent.
+#   Mis-filing     30125100 "Cartuse de toner" and 35331500 "Cartuse" share
+#                  "cartus black". 35331500 is AMMUNITION. Merging them would price
+#                  toner against cartridges of a very different sort.
+#
+# Only add a group when the two codes genuinely name one thing, and say how you checked.
+
+# --- CPV codes that name the same object -------------------------------------------
+#
+# `canonic` is the code everything else maps to; prefer the one the publisher uses most,
+# since it keeps the majority of rows in place.
+coduri_echivalente:
+  - canonic: "30197642"
+    aliase: ["30197643", "30197644"]
+    motiv: >-
+      Three official labels for copier paper: "Hartie pentru fotocopiatoare si
+      xerografica" (24,238 rows), "Hartie pentru fotocopiatoare" (20,313) and "Hartie
+      xerografica" (6,465), counted over 2021+ where the labels are trustworthy.
+      Xerographic paper and photocopier paper are the same product; the split is an
+      artefact of the vocabulary, and "hartie copiator a4" appears under all three.
+
+  - canonic: "71520000"
+    aliase: ["71247000"]
+    motiv: >-
+      "Servicii de supraveghere a lucrarilor" (27,758) and "Supraveghere a lucrarilor de
+      constructii" (2,765) describe the same service — in Romanian practice, dirigenție
+      de șantier. They sit in different CPV branches (7152 and 7124), and the shared
+      descriptions are literally "asistenta tehnica diriginte" and "asistenta tehnica
+      dirigentie".
+      NOT included: 71521000 "Servicii de supraveghere a santierului". Its description
+      overlap is just as strong, but 71520000 is its PARENT — trailing zeros make the
+      hierarchy explicit — and a child code is a kind of the parent, not another name
+      for it. The rule above applies to the author of this file too; the test caught
+      this after the warning had already been written.
+
+# --- Different words for the same object --------------------------------------------
+#
+# Nothing automatic can group these: the descriptions share no tokens. Matching is on
+# the folded product key, so write entries lowercase and without diacritics.
+#
+# `canonic` is what the group is reported as. Prefer the plainest name a reader would
+# recognise, not the most bureaucratic one.
+sinonime:
+  - canonic: "banci parc"
+    aliase:
+      - "mobilier odihna exterior"
+      - "mobilier urban odihna"
+      - "banci pentru parc"
+      - "banci exterior"
+    motiv: >-
+      The example given in CONTRIBUTING.md and in the original brief. A park bench is
+      procured under both plain and bureaucratic names.
+
+  - canonic: "hartie copiator a4"
+    aliase:
+      - "hartie xerox a4"
+      - "hartie copiator format a4"
+      - "hartie alba a4"
+      - "hartie a4 copiator"
+    motiv: >-
+      "Xerox" here is generic usage rather than the brand — buyers write it for any
+      copier paper. Note this deliberately does NOT include a bare "hartie a4", which
+      also covers notebook and specialty paper.
+
+  - canonic: "medicina muncii"
+    aliase:
+      - "servicii medicina muncii"
+      - "examen medical periodic"
+      - "control medical periodic angajati"
+    motiv: >-
+      One statutory service under several descriptions, spread across 85147000,
+      85148000 and 85121270 in the archive.
+
+  - canonic: "bonuri valorice carburant"
+    aliase:
+      - "bonuri valorice carburanti"
+      - "tichete carburant"
+      - "carduri carburant"
+      - "bonuri carburant"
+    motiv: >-
+      Filed under 22458000 (printed matter) and 09100000 (fuels) — different divisions
+      entirely, because some buyers classify the voucher and others the fuel.
+
+  - canonic: "certificat digital calificat"
+    aliase:
+      - "semnatura electronica calificata"
+      - "certificat semnatura electronica"
+      - "reinnoire certificat digital"
+    motiv: >-
+      The certificate and the signature it produces are procured interchangeably;
+      79132100 dominates but 79130000, 79132000 and 72500000 all appear.
