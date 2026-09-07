@@ -332,6 +332,35 @@ unscreened years without asserting a ceiling we cannot evidence — we are not c
 know the 2016 works ceiling, only that 543 billion exceeds every ceiling this law has
 ever had. Archive-wide this excludes 6,027 rows (0.02%) carrying 30 trillion RON.
 
+### Contract values, and why frameworks carry no total
+
+A framework agreement (*acord-cadru*) publishes a **ceiling** — the maximum callable over
+the agreement's life — not money spent. For a multi-supplier framework that ceiling is
+repeated on **every supplier's row**: the four largest values in the archive are the same
+177,930,419,250 RON, one authority, four pharmaceutical wholesalers, one agreement.
+
+Summing framework rows therefore multiplies a single ceiling by the number of suppliers,
+and then double-counts again against the call-offs placed under it. So `contracte_an`
+publishes frameworks with a count and a median and **no total at all**. Money actually
+committed is the call-offs (*contract subsecvent*) plus ordinary contracts.
+
+| Nature | Rows | Published total |
+|---|---|---|
+| `plafon_acord_cadru` | 2,080,764 | none — a ceiling, repeated per supplier |
+| `contract_subsecvent` | 1,171,118 | yes — called off under a framework |
+| `contract` | 394,424 | yes — ordinary contract |
+| `nedeterminat` | 954 | yes, flagged |
+
+The classification tests for call-offs **before** frameworks, because a call-off row also
+carries framework wording; the other order would file every call-off as a ceiling.
+
+**Extremes are disclosed, not excluded.** Unlike a direct acquisition, a public contract
+has no legal ceiling — that is what distinguishes it — so nothing here can be called
+impossible on legal grounds. But 301 rows (0.076%) carry 40% of the ordinary-contract
+total, and a reader given only a sum would effectively be reading those rows. Each row
+therefore publishes the total, the total excluding values above 1 billion RON, and the
+count of such values, side by side.
+
 ## Corrections
 
 Errors are expected. The process is documented in full in
