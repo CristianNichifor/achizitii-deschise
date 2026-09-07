@@ -210,11 +210,53 @@ CASE
 END AS categorie
 """
 
+# Publication dates are stored as free text and the format changes almost every year:
+# ISO in 2016-2017 and 2025-2026, DD-MM-YYYY in 2018, DD.MM.YYYY in 2019-2020,
+# DD/MM/YYYY in 2021, MM/DD/YYYY in 2022 (US order), and an Excel serial number in 2023.
+# A plain cast parses 2016-2017 and 2025-2026 and silently yields NULL for the rest,
+# which is how divizare-01 came to compute date_diff over four usable years out of
+# eleven without anything failing.
+#
+# Romanian day-first order is tried before US month-first, so an unambiguous value like
+# 03/29/2022 falls through to the US branch while 30/07/2021 is read day-first. A value
+# such as 03/04/2022 is genuinely ambiguous and is read day-first by convention.
+DATA_SQL_TEMPLATE = """
+COALESCE(
+  TRY_CAST({col} AS TIMESTAMP),
+  TRY_STRPTIME({col}, '%d.%m.%Y %H:%M:%S'), TRY_STRPTIME({col}, '%d.%m.%Y'),
+  TRY_STRPTIME({col}, '%d-%m-%Y %H:%M:%S'), TRY_STRPTIME({col}, '%d-%m-%Y'),
+  TRY_STRPTIME({col}, '%d/%m/%Y %H:%M:%S'), TRY_STRPTIME({col}, '%d/%m/%Y'),
+  TRY_STRPTIME({col}, '%m/%d/%Y %I:%M:%S %p'), TRY_STRPTIME({col}, '%m/%d/%Y %H:%M:%S'),
+  TRY_STRPTIME({col}, '%m/%d/%Y'),
+  CASE WHEN regexp_matches({col}, '^[0-9]{{4,6}}(\\.[0-9]+)?$')
+       THEN TIMESTAMP '1899-12-30 00:00:00' + TRY_CAST({col} AS DOUBLE) * INTERVAL 1 DAY
+  END
+) AS {alias}
+"""
+
+
+def _date_expr(col: str, alias: str) -> str:
+    return DATA_SQL_TEMPLATE.format(col=col, alias=alias)
+
+
 # Tables that gain the derived category column.
 _DERIVED: dict[str, str] = {
-    "achizitii_directe": CATEGORIE_SQL,
-    "contracte": CATEGORIE_SQL,
-    "fara_anunt": CATEGORIE_SQL,
+    "achizitii_directe": ", ".join((
+        CATEGORIE_SQL,
+        _date_expr("data_publicare", "data_publicare_ts"),
+        _date_expr("data_finalizare", "data_finalizare_ts"),
+    )),
+    "contracte": ", ".join((
+        CATEGORIE_SQL,
+        _date_expr("data_publicare", "data_publicare_ts"),
+        _date_expr("data_contract", "data_contract_ts"),
+    )),
+    "fara_anunt": ", ".join((
+        CATEGORIE_SQL,
+        _date_expr("data_contract", "data_contract_ts"),
+    )),
+    "initiere": _date_expr("data_publicare", "data_publicare_ts"),
+    "modificari": _date_expr("data_publicare", "data_publicare_ts"),
 }
 
 
