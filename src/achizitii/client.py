@@ -93,9 +93,20 @@ class SeapClient:
     # -- endpoints -------------------------------------------------------------
 
     def direct_acquisition_list(
-        self, finalization_date: str, page_index: int = 0, page_size: int | None = None
+        self,
+        finalization_date: str,
+        page_index: int = 0,
+        page_size: int | None = None,
+        cpv_category_id: int | None = None,
     ) -> dict[str, Any]:
-        """One page of direct acquisitions finalized on `finalization_date` (YYYY-MM-DD)."""
+        """One page of direct acquisitions finalized on `finalization_date` (YYYY-MM-DD).
+
+        `cpv_category_id` is the only filter that meaningfully narrows a day. Measured
+        against the endpoint: `publicationDate*`, `sortProperties`, a time component on
+        the date, `showOngoingDa` and `cpvCode` are all ignored; `contractingAuthorityId`
+        and `supplierId` expect SEAP's internal ids, not fiscal codes. Category and
+        acquisition state are the two that work.
+        """
         return self.post(
             "/DirectAcquisitionCommon/GetDirectAcquisitionList/",
             {
@@ -103,6 +114,7 @@ class SeapClient:
                 "showOngoingDa": False,
                 "cookieContext": None,
                 "pageIndex": page_index,
+                "cPVCategoryId": cpv_category_id,
                 "sysDirectAcquisitionStateId": None,
                 "publicationDateStart": None,
                 "publicationDateEnd": None,
