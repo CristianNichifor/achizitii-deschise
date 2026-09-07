@@ -15,7 +15,7 @@
       "name": "cpv_an",
       "file": "cpv_an.parquet",
       "rows": 79541,
-      "bytes": 1934077,
+      "bytes": 1932682,
       "description": "Per CPV code and year: how many acquisitions and what they typically cost. Percentiles are null below n=5."
     },
     {
@@ -29,21 +29,21 @@
       "name": "autoritati_an",
       "file": "autoritati_an.parquet",
       "rows": 156222,
-      "bytes": 3489888,
+      "bytes": 3498976,
       "description": "Per contracting authority and year: volume and spend."
     },
     {
       "name": "furnizori_an",
       "file": "furnizori_an.parquet",
       "rows": 751504,
-      "bytes": 15608454,
+      "bytes": 15615247,
       "description": "Per supplier and year: volume, revenue and how many buyers."
     },
     {
       "name": "preturi_unitare",
       "file": "preturi_unitare.parquet",
       "rows": 117,
-      "bytes": 5313,
+      "bytes": 5322,
       "description": "Median unit price per product group. A group is CPV + product key + unit + pack size; percentiles are null below n=5. Never compare across units or pack sizes."
     },
     {
@@ -57,7 +57,7 @@
       "name": "preturi_judet",
       "file": "preturi_judet.parquet",
       "rows": 119,
-      "bytes": 4424,
+      "bytes": 4439,
       "description": "The same groups broken down by county, for comparing what different buyers paid for the same thing. Suppressed below n=5 per county."
     }
   ],
@@ -217,6 +217,15 @@
     "baza": "2015=100",
     "publicat": "2026-02-06",
     "nota": "Sumele publicate sunt NOMINALE. Acest tabel permite exprimarea lor în moneda unui an de referință. 2026 nu are indice publicat de Eurostat, deci nu poate fi ajustat — rămâne nominal."
+  },
+  "furnizori_profil": {
+    "file": "furnizori_profil.parquet",
+    "firme": 165494,
+    "cu_judet": 165487,
+    "inactive_fiscal": 11207,
+    "radiate": 1858,
+    "sursa": "ANAF — webservicesp.anaf.ro (serviciu public, fără cheie)",
+    "nota": "Coloana `inactiv` este starea la data verificării. Pentru a judeca o achiziție folosiți datele absolute — data_inactivare, data_reactivare, data_radiere — comparate cu data achiziției: o firmă inactivă azi putea fi perfect activă când a câștigat contractul."
   },
   "ruti": {
     "file": "ruti.parquet",

@@ -204,6 +204,23 @@ const VIEWS = {
       ORDER BY n DESC, mediana_ron DESC NULLS LAST
       LIMIT 200`,
   },
+  firme: {
+    label: 'Profil firme',
+    search: 'denumire, CUI sau județ',
+    note: 'Date ANAF (serviciu public). Coloana „inactiv" este starea la data ' +
+          'verificării. Pentru a judeca o achiziție comparați data_inactivare / ' +
+          'data_reactivare / data_radiere cu data achiziției — o firmă inactivă azi ' +
+          'putea fi perfect activă când a câștigat contractul.',
+    sql: (f) => `
+      SELECT cui, denumire, judet, data_inregistrare, inactiv,
+             data_inactivare, data_reactivare, data_radiere, platitor_tva
+      FROM read_parquet(${lit(url('furnizori_profil.parquet'))})
+      ${f.q ? `WHERE denumire ILIKE ${lit('%' + f.q + '%')}
+            OR cui ILIKE ${lit('%' + f.q + '%')}
+            OR judet ILIKE ${lit('%' + f.q + '%')}` : ''}
+      ORDER BY denumire
+      LIMIT 200`,
+  },
   ruti: {
     label: 'Întâlniri (RUTI)',
     search: 'decident, instituție sau subiect',
@@ -353,8 +370,8 @@ function selectTab(key, ind) {
   // register are not organised by year.
   $('wrap-baza').style.display = VIEWS[key] && VIEWS[key].money ? '' : 'none';
   $('minn').parentElement.style.display =
-    (key === 'indicatori' || key === 'ruti') ? 'none' : '';
-  const yearless = key === 'preturi' || key === 'ruti'
+    (key === 'indicatori' || key === 'ruti' || key === 'firme') ? 'none' : '';
+  const yearless = key === 'preturi' || key === 'ruti' || key === 'firme'
     || (key === 'indicatori' && !(indicator.columns || []).includes('an'));
   $('an').parentElement.style.display = yearless ? 'none' : '';
   if (key === 'preturi' && manifest.preturi_unitare) {
@@ -399,6 +416,7 @@ function selectTab(key, ind) {
     // broken feature rather than an honest "not collected yet".
     if (key === 'preturi' && !manifest.preturi_unitare) continue;
     if (key === 'ruti' && !manifest.ruti) continue;
+    if (key === 'firme' && !manifest.furnizori_profil) continue;
     if (key === 'contracte'
         && !(manifest.datasets || []).some((d) => d.name === 'contracte_an')) continue;
     const b = document.createElement('button');
