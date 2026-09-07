@@ -36,21 +36,21 @@
       "name": "preturi_unitare",
       "file": "preturi_unitare.parquet",
       "rows": 117,
-      "bytes": 5314,
+      "bytes": 5323,
       "description": "Median unit price per product group. A group is CPV + product key + unit + pack size; percentiles are null below n=5. Never compare across units or pack sizes."
     },
     {
       "name": "preturi_produs",
       "file": "preturi_produs.parquet",
       "rows": 117,
-      "bytes": 4641,
+      "bytes": 4648,
       "description": "The same product across CPV codes: grouped on description, unit and pack size while the code is allowed to vary. `coduri` says how many CPV codes contributed, so a wide spread is visible rather than hidden."
     },
     {
       "name": "preturi_judet",
       "file": "preturi_judet.parquet",
       "rows": 119,
-      "bytes": 4442,
+      "bytes": 4443,
       "description": "The same groups broken down by county, for comparing what different buyers paid for the same thing. Suppressed below n=5 per county."
     }
   ],
@@ -182,9 +182,7 @@
       ]
     }
   ],
-  "arhivat_azi": [
-    "preturi/an=2026/luna=09/2026-09-06.parquet"
-  ],
+  "arhivat_azi": [],
   "acoperire": {
     "achizitii_directe_randuri": 26672772,
     "valori_folosite": 26406114,
@@ -209,5 +207,13 @@
     "din": "2026-09-06",
     "pana_la": "2026-09-06",
     "nota": "Prețurile unitare nu pot fi reconstituite retroactiv: exporturile în masă nu conțin cantități. Arhiva crește doar înainte, de la prima zi colectată."
+  },
+  "ruti": {
+    "file": "ruti.parquet",
+    "intalniri": 666,
+    "din": "2025-10-13",
+    "pana_la": "2026-09-09",
+    "cu_concluzii_publicate": 97,
+    "nota": "Registrul întâlnirilor dintre decidenți și terți. O întâlnire este legală, iar registrul există tocmai pentru a o face vizibilă — prezența aici nu spune nimic despre vreun contract."
   }
 }
