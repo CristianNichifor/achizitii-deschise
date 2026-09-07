@@ -19,6 +19,7 @@ import logging
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import pyarrow as pa
@@ -68,6 +69,42 @@ class AuthorityResolver:
                 "is_utility": clean.get("isUtility"),
             }
         return self._cache[authority_id]
+
+
+def archived_ids(day: date) -> set[int]:
+    """Acquisition ids already in the price archive for `day`.
+
+    This is what makes a frequent schedule affordable. Without it every run re-fetches
+    the whole day so far — by evening that is ~8,300 detail calls to re-learn what we
+    already knew, and twenty-four of those a day does not fit in the free minutes. With
+    it, a run costs only what has appeared since the last one.
+
+    Missing or unreadable archive means "fetch everything": doing extra work is the
+    right failure, silently skipping records is not.
+    """
+    target = (
+        Path(config.ROOT) / "site" / "data" / "preturi"
+        / f"an={day.year}" / f"luna={day.month:02d}" / f"{day.isoformat()}.parquet"
+    )
+    if not target.is_file():
+        return set()
+    try:
+        import duckdb
+
+        con = duckdb.connect()
+        rows = con.execute(
+            f"SELECT DISTINCT ocid FROM read_parquet('{target}')"
+        ).fetchall()
+        con.close()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("could not read the archive for %s (%s); fetching everything", day, exc)
+        return set()
+    ids: set[int] = set()
+    for (ocid,) in rows:
+        _, _, tail = str(ocid or "").rpartition("-da-")
+        if tail.isdigit():
+            ids.add(int(tail))
+    return ids
 
 
 def list_day(
@@ -136,6 +173,19 @@ def fetch_day(
     is how many run at once. See config.MAX_RPS for the measurement behind the number.
     """
     summaries = list_day(client, day, limit=limit)
+
+    # Skip what a previous run already archived for this day.
+    done = archived_ids(day)
+    if done:
+        before = len(summaries)
+        summaries = [
+            s for s in summaries if s.get("directAcquisitionId") not in done
+        ]
+        log.info(
+            "%s: %d already archived, fetching %d new",
+            day.isoformat(), before - len(summaries), len(summaries),
+        )
+
     details: list[dict[str, Any]] = []
 
     def fetch_one(summary: dict[str, Any]) -> dict[str, Any] | None:
