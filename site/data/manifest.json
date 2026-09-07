@@ -15,7 +15,7 @@
       "name": "cpv_an",
       "file": "cpv_an.parquet",
       "rows": 79541,
-      "bytes": 1914578,
+      "bytes": 1930748,
       "description": "Per CPV code and year: how many acquisitions and what they typically cost. Percentiles are null below n=5."
     },
     {
@@ -26,38 +26,45 @@
       "description": "Contracts per year and nature. Framework agreements publish a CEILING that is repeated per supplier, so they carry no sum — only a count and a median. Money committed is the call-offs and ordinary contracts."
     },
     {
+      "name": "judete_an",
+      "file": "judete_an.parquet",
+      "rows": 462,
+      "bytes": 11216,
+      "description": "Where the money goes geographically: per year and buyer county, how many awards and how much value stayed with a supplier registered in the same county. Descriptive, not an indicator — buying locally is lawful and often sensible."
+    },
+    {
       "name": "autoritati_an",
       "file": "autoritati_an.parquet",
       "rows": 156222,
-      "bytes": 3507279,
+      "bytes": 3487842,
       "description": "Per contracting authority and year: volume and spend."
     },
     {
       "name": "furnizori_an",
       "file": "furnizori_an.parquet",
       "rows": 751504,
-      "bytes": 15645888,
+      "bytes": 15662381,
       "description": "Per supplier and year: volume, revenue and how many buyers."
     },
     {
       "name": "preturi_unitare",
       "file": "preturi_unitare.parquet",
       "rows": 117,
-      "bytes": 5296,
+      "bytes": 5326,
       "description": "Median unit price per product group. A group is CPV + product key + unit + pack size; percentiles are null below n=5. Never compare across units or pack sizes."
     },
     {
       "name": "preturi_produs",
       "file": "preturi_produs.parquet",
       "rows": 117,
-      "bytes": 4654,
+      "bytes": 4640,
       "description": "The same product across CPV codes: grouped on description, unit and pack size while the code is allowed to vary. `coduri` says how many CPV codes contributed, so a wide spread is visible rather than hidden."
     },
     {
       "name": "preturi_judet",
       "file": "preturi_judet.parquet",
       "rows": 119,
-      "bytes": 4432,
+      "bytes": 4426,
       "description": "The same groups broken down by county, for comparing what different buyers paid for the same thing. Suppressed below n=5 per county."
     }
   ],
@@ -239,10 +246,10 @@
   },
   "furnizori_profil": {
     "file": "furnizori_profil.parquet",
-    "firme": 165494,
-    "cu_judet": 165487,
-    "inactive_fiscal": 11207,
-    "radiate": 1858,
+    "firme": 182530,
+    "cu_judet": 182523,
+    "inactive_fiscal": 11381,
+    "radiate": 1866,
     "sursa": "ANAF — webservicesp.anaf.ro (serviciu public, fără cheie)",
     "nota": "Coloana `inactiv` este starea la data verificării. Pentru a judeca o achiziție folosiți datele absolute — data_inactivare, data_reactivare, data_radiere — comparate cu data achiziției: o firmă inactivă azi putea fi perfect activă când a câștigat contractul."
   },
