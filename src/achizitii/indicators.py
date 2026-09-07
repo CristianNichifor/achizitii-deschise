@@ -538,6 +538,92 @@ ESTIMARE_01 = Indicator(
     params={"prag_raport": 0.99, "valoare_minima": 100_000.0, "raport_maxim": 5.0},
 )
 
+
+# Comparing a supplier's registered name against the one SEAP recorded. The CUI join
+# alone agrees with the name for 88.5% of suppliers; for the remaining 11.4% the code
+# points at a company with a different name — sometimes a rename ("Prisum International
+# Trading" -> "PRISUM HEALTHCARE"), sometimes a genuinely different business
+# ("ALLERGY-FARMA" against "UNION BASE LIVESTOCK GROUP").
+#
+# A 90%-reliable join is fine for a county backfill and NOT fine for a finding that names
+# an authority and says its supplier had been struck off. So a finding is published only
+# where the names also agree, and the ~30% of candidate rows that fail this are dropped.
+_NAME_KEY = (
+    "regexp_replace(regexp_replace(upper(strip_accents({col})), "
+    "'\\b(S\\.?C\\.?|S\\.?R\\.?L\\.?|S\\.?A\\.?|SRL|SA|PFA|II|IF|SNC|SCS)\\b', ' ', 'g'), "
+    "'[^A-Z0-9]', '', 'g')"
+)
+
+INCETARE_01 = Indicator(
+    identifier="incetare-01",
+    name_ro="Achiziție de la un operator radiat sau în lichidare la data atribuirii",
+    description_ro=(
+        "Listează achizițiile directe atribuite unui operator economic care, la data "
+        "publicării achiziției, era deja radiat din registrul comerțului sau intrat în "
+        "lichidare, conform stării înregistrate la ANAF. Starea este evaluată LA DATA "
+        "ACHIZIȚIEI, nu la zi."
+    ),
+    legal_basis=(
+        "Legea 98/2016, art. 167 alin. (1) lit. b) — excluderea operatorului aflat în "
+        "procedura insolvenței, în lichidare, sub supraveghere judiciară sau în "
+        "încetarea activității"
+    ),
+    rationale=(
+        "Un operator radiat nu mai are personalitate juridică, iar unul în lichidare "
+        "intră explicit în motivele de excludere. Verificarea este mecanică: o dată "
+        "publică de radiere comparată cu o dată publică de atribuire."
+    ),
+    applies_to=("achizitii_directe", "firme"),
+    requires_columns=(
+        "achizitii_directe.furnizor_cui",
+        "achizitii_directe.furnizor",
+        "achizitii_directe.data_publicare_ts",
+        "firme.stare_inregistrare",
+    ),
+    sql=f"""
+    WITH stari AS (
+        SELECT cui,
+               denumire,
+               regexp_replace(stare_inregistrare, ' din data .*', '') AS stare,
+               TRY_CAST(strptime(
+                   regexp_extract(stare_inregistrare, 'din data ([0-9.]+)', 1),
+                   '%d.%m.%Y') AS DATE) AS stare_din
+        FROM firme
+        WHERE stare_inregistrare IS NOT NULL
+    )
+    SELECT 'incetare-01'                          AS indicator,
+           a.an,
+           a.autoritate,
+           a.autoritate_cui,
+           a.furnizor,
+           s.denumire                             AS furnizor_anaf,
+           s.stare,
+           s.stare_din                            AS stare_de_la,
+           CAST(a.data_publicare_ts AS DATE)      AS data_achizitie,
+           date_diff('day', s.stare_din, CAST(a.data_publicare_ts AS DATE)) AS zile_dupa,
+           a.cpv,
+           TRY_CAST(a.valoare_ron AS DOUBLE)      AS valoare_ron
+    FROM achizitii_directe a
+    JOIN stari s
+      ON s.cui = ltrim(regexp_replace(a.furnizor_cui, '[^0-9]', '', 'g'), '0')
+    WHERE a.data_publicare_ts IS NOT NULL
+      AND a.furnizor IS NOT NULL
+      -- Only genuine cessation. A merger or division is reorganisation: the business
+      -- continues under the absorbing entity, and flagging it would report Orange
+      -- Romania Communications as a defunct supplier.
+      AND s.stare IN ('RADIERE', 'DIZOLVARE CU LICHIDARE(INCEPUT LICHIDARE)')
+      AND s.stare_din IS NOT NULL
+      AND CAST(a.data_publicare_ts AS DATE) >= s.stare_din
+      -- Corroborate the fiscal-code join with the name.
+      AND ({_NAME_KEY.format(col='a.furnizor')} = {_NAME_KEY.format(col='s.denumire')}
+        OR strpos({_NAME_KEY.format(col='s.denumire')},
+                  {_NAME_KEY.format(col='a.furnizor')}) > 0
+        OR strpos({_NAME_KEY.format(col='a.furnizor')},
+                  {_NAME_KEY.format(col='s.denumire')}) > 0)
+    ORDER BY valoare_ron DESC NULLS LAST
+    """,
+)
+
 INDICATORS: tuple[Indicator, ...] = (
     PRAG_01,
     FARA_COMPETITIE_01,
@@ -545,6 +631,7 @@ INDICATORS: tuple[Indicator, ...] = (
     DEPENDENTA_01,
     MODIFICARE_01,
     OFERTANT_UNIC_01,
+    INCETARE_01,
     ESTIMARE_01,
 )
 INDICATORS_BY_ID = {i.identifier: i for i in INDICATORS}
