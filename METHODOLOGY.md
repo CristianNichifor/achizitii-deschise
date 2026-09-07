@@ -75,8 +75,8 @@ For a benchmark over (CPV × unit × county × period):
 - **Median, not mean.** Procurement prices are heavily right-skewed.
 - Dispersion reported as the p90/p10 ratio.
 - Minimum `n = 5` to publish a group; below that, suppressed.
-- Prices deflated to a common base year using INS CPI *(planned, Stage 1 — not yet
-  applied; current figures are nominal)*.
+- Published figures are **nominal**, with the deflator published alongside them so any
+  year can be expressed in another year's money. See "Comparing money across years".
 
 ## Risk indicators
 
@@ -291,6 +291,47 @@ which removed 934 false matches from a 600,000-row sample. The trade is recall f
 precision, which is the right direction when the output feeds price groups: a wrongly
 attributed brand splits or merges groups that should not be.
 
+### Comparing money across years
+
+Romanian prices rose 62% between 2016 and 2025 (HICP 98.93 → 160.06), so comparing
+those years without adjusting shows inflation as much as procurement.
+
+The index is **published, not applied**. `site/data/deflator.parquet` carries one row per
+year and the site multiplies at query time, which means published figures stay exactly as
+published, the reader chooses the base year, and the arithmetic is visible in the query
+panel rather than baked into a stored number.
+
+Source: Eurostat `prc_hicp_aind`, Romania, annual average, 2015=100 — chosen over the
+national CPI because it is an open documented API and methodologically consistent across
+the whole series. Mixing HICP with the national index would create a step that looks like
+inflation. The values are checked into `data/ipc.yml` rather than fetched at build time,
+so a Eurostat revision arrives as a reviewable commit instead of silently changing every
+figure on the site.
+
+**2026 has no index and is not extrapolated.** Selecting a base year blanks 2026's
+monetary columns rather than leaving them nominal among adjusted ones — mixing the two in
+a single column would be worse than an obvious gap.
+
+### Correction: an unscreened year is not an unbounded one
+
+Screening values against the legal ceiling has now been wrong in both directions, and
+both errors were mine.
+
+First, a single ceiling was applied to every category, so works were judged against the
+goods figure. That excluded 52,306 works acquisitions — 12% of 2019's works — as
+"impossible" when they were very likely lawful.
+
+Fixing that introduced the opposite error. Works have no established ceiling before 2022,
+so those years became screened against **nothing**, and a 2016 record of
+**543,595,445,218 RON** — a school asphalting job, 98% of that year's works total —
+entered the published sum. The real figure is about 1.2 billion.
+
+The bound now used: a value above the most permissive ceiling the law has **ever** set
+for its category cannot be a lawful direct acquisition in any year. That constrains the
+unscreened years without asserting a ceiling we cannot evidence — we are not claiming to
+know the 2016 works ceiling, only that 543 billion exceeds every ceiling this law has
+ever had. Archive-wide this excludes 6,027 rows (0.02%) carrying 30 trillion RON.
+
 ## Corrections
 
 Errors are expected. The process is documented in full in
@@ -326,8 +367,9 @@ within-CPV differences can be attributed to price rather than specification.
 
 - **Stage 0 covers direct acquisitions only.** Open tenders keep line items inside the
   *caiet de sarcini*; those are not yet parsed.
-- **No CPI deflation yet.** Cross-year comparisons are nominal and therefore overstate
-  recent increases.
+- **2026 cannot be deflated.** Eurostat has not published the index for it, so 2026
+  figures are nominal even when a base year is selected, and appear blank rather than
+  unadjusted.
 - **CPV is coarse.** One CPV code spans a €300 netbook and a €4,000 workstation, so
   CPV alone does not make two items equivalent. CPV plus unit plus description matching
   is required; the description layer is Stage 1.
