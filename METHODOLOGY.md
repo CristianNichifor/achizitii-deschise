@@ -99,6 +99,8 @@ Every indicator declares four things, and will not run without them:
 | `divizare-01` | Repeat purchases, same object and supplier, short window, cumulative value above the ceiling | art. 11 |
 | `dependenta-01` | One supplier taking a dominant share of an authority's budget | art. 2 |
 | `modificare-01` | Contract value increased after signature | art. 221 |
+| `ofertant-unic-01` | Exactly one offer received | art. 2 |
+| `estimare-01` | Awarded value far above the authority's own estimate | art. 2 and art. 9 |
 
 All references are to Legea 98/2016.
 
@@ -173,6 +175,20 @@ automatically if the column returns.
 
 Measured on 2016–2017: 28,646 contracts received exactly one offer, against 24,034 with
 two and 25,386 with three.
+
+### Correction: the 2022 estimate gap was ours, not the publisher's
+
+An earlier version recorded that contracts stopped carrying their own estimate part-way
+through 2022, and reasoned about why the publisher might have changed practice mid-year.
+**That was wrong.** One quarter of 2022 heads the column `VALOARE_ESTIMATA_RON` where the
+rest of the year writes `Valoare estimata`, and the alias was missing — so the column
+read as 40.6% null and the explanation was invented to fit an artefact of our own
+ingest. With the alias added, 2022 is 99.7% populated and `estimare-01` rises from 24,543
+findings to 42,631.
+
+The column genuinely does disappear from 2023 onwards. The lesson kept here is that a
+plausible story about the source is not evidence: the ingest was never checked against
+the file's actual headers before the explanation was written down.
 
 ### Not yet implemented
 - **Corruption Risk Index** composite scoring (Government Transparency Institute). The
