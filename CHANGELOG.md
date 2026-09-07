@@ -6,6 +6,18 @@ Corrections to published data are recorded here, as committed to in
 A correction is applied to the pipeline rather than to the published file, so that it
 survives regeneration; the entry below names the commit that fixed it.
 
+## 2026-09-07 — inflation adjustment, and a trillion-lei correction
+
+- **Added**: figures can be expressed in any year's money. The Eurostat HICP index is
+  published as its own table and applied at query time, so published numbers stay
+  as-published. 2026 has no index and is not extrapolated.
+- **Corrected**: years with no established ceiling were screened against nothing, so a
+  2016 works record of 543,595,445,218 RON — 98% of that year's works total — was inside
+  the published sum. 2016 works falls from 553.7bn to 1.22bn. Values above the highest
+  ceiling ever set for a category are now excluded in every year: 6,027 rows carrying
+  30 trillion RON.
+- **Added**: the RUTI meetings register, published as its own table and joined to nothing.
+
 ## 2026-09-07 — CPV labels were numbers
 
 - **Corrected**: the CPV name column carried the internal `CPV_CODE_ID` instead of a
