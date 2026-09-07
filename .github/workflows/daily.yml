@@ -2,17 +2,15 @@ name: SEAP line items
 
 on:
   schedule:
-    # Every three hours. Re-running during the day genuinely sees more of it, and the
-    # archive rule is "a day may grow, never shrink", so each pass supersedes the last.
+    # Once a day. It was briefly set to every three hours; then SICAP IP-blocked us
+    # for "trafic automat care depaseste limitele de utilizare normala" and the whole
+    # question changed from "how fresh can this be" to "do we have access at all".
     #
-    # Not hourly, and the reason is the free-minutes budget rather than politeness. Each
-    # run re-fetches the whole day so far, so cost grows through the day: eight runs of
-    # a weekday total roughly 18 minutes, about 410 minutes a month against the 2,000
-    # free. Twenty-four runs would be ~3,600 and would not fit.
-    #
-    # Fetching only acquisitions not already archived would make hourly affordable; that
-    # needs the archive consulted before the detail calls, and is not done yet.
-    - cron: "18 */3 * * *"
+    # Frequency is not the main cost — archived_ids() means a repeat run of the same day
+    # fetches almost nothing — but until access is restored and we understand what the
+    # platform considers normal, once a day is what the previous months ran at without
+    # complaint. Raise it only with evidence, not with a throughput measurement.
+    - cron: "20 4 * * *"
   workflow_dispatch:
     inputs:
       start:
