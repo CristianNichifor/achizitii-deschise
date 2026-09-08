@@ -34,6 +34,9 @@ data/firme/
 # row against 47 for the slim archive, and they are rewritten on every run. `achizitii
 # publish` distils them into site/data/preturi/, which IS committed and append-only.
 site/data/items/
+# Consolidated monthly copies are an upload artefact, not a source of truth —
+# the daily files under site/data/preturi/ are.
+site/data/preturi-lunar/
 
 # State IS committed (it is small and is the resume ledger)
 !state/
