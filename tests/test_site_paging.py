@@ -127,7 +127,10 @@ def test_a_page_number_belongs_to_its_result_set(source: str) -> None:
         assert f"$('{control}').addEventListener('change', rerun);" in source
     # A new sort order, a new search, and a new view.
     assert "pagina = 0;   // a different order makes the old page number meaningless" in source
-    assert "if (!applying && key !== current) { pagina = 0; sortCol = ''; sortDir = 'desc'; }" in source
+    assert "if (!applying && key !== current) {" in source
+    reset = _body(source, "if (!applying && key !== current) {", 200)
+    for state in ("pagina = 0", "sortCol = ''", "facetValue = ''"):
+        assert state in reset, f"{state} must be reset when the view changes"
 
 
 def test_a_link_still_decides_where_it_points(source: str) -> None:

@@ -42,6 +42,12 @@
           color:var(--muted); margin-bottom:.25rem; }
   select, input, button { font:inherit; padding:.45rem .6rem; border:1px solid var(--line);
           border-radius:6px; background:var(--paper); color:var(--ink); }
+  /* The native dropdown arrow is drawn INSIDE the control's padding box and takes about
+     16-20px on Chromium. With .6rem (9.6px) of right padding the longest option — "Fișă
+     completă — tot ce știm despre o entitate" — ran under the chevron with roughly two
+     pixels of daylight. Selects get their own right padding; the shared rule stays as it
+     is for inputs and buttons, which have no arrow to clear. */
+  select { padding-right: 1.8rem; }
   .hero { display:flex; gap:.5rem; margin:0 0 .4rem; }
   /* min-width:0 because a text input carries an intrinsic width that a flex item will
      not shrink below by default; without it the search button is pushed off the right
@@ -191,6 +197,28 @@
   th.sortable { cursor:pointer; user-select:none; }
   th.sortable:hover, th.sortable:focus-visible { color:var(--accent); }
   th.sorted { color:var(--accent); }
+  /* One meeting, one card. The date leads because the register is chronological; the
+     person leads the card because that is what a reader is looking for. */
+  .meet { border:1px solid var(--line); border-radius:8px; padding:.7rem .85rem;
+          margin:0 0 .55rem; display:grid; gap:.15rem .9rem;
+          grid-template-columns:7.5rem 1fr; }
+  .meet > time { grid-column:1; grid-row:1 / span 2; color:var(--muted);
+                 font-size:.8rem; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .meet .cine { grid-column:2; font-weight:600; }
+  .meet .rol { grid-column:2; color:var(--muted); font-size:.82rem; }
+  .meet .subiect { grid-column:2; margin:.35rem 0 0; }
+  .meet details { grid-column:2; margin:.4rem 0 0; }
+  .meet details summary { font-size:.8rem; }
+  .meet dl { margin:.5rem 0 0; font-size:.86rem; }
+  .meet dt { color:var(--muted); font-size:.72rem; text-transform:uppercase;
+             letter-spacing:.04em; margin:.5rem 0 .1rem; }
+  .meet dd { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; }
+  /* A cancelled entry still belongs in the register — that it was cancelled is the fact. */
+  .meet.anulata { opacity:.72; }
+  .meet .steag { grid-column:2; display:inline-block; align-self:start; justify-self:start;
+                 font-size:.7rem; text-transform:uppercase; letter-spacing:.04em;
+                 color:var(--warn); border:1px solid var(--warn); border-radius:4px;
+                 padding:0 .3rem; margin:.3rem 0 0; }
   .pager { display:flex; align-items:center; gap:.75rem; margin:.8rem 0 0;
            flex-wrap:wrap; }
   .pager[hidden] { display:none; }
@@ -285,6 +313,12 @@
     .controls select, .controls input { width:100%; }
     h1 { font-size:1.35rem; }
 
+    /* The date sits above the name rather than beside it: a 7.5rem gutter is a quarter
+       of a 320px screen spent on ten characters. */
+    .meet { grid-template-columns:1fr; gap:.1rem; }
+    .meet > time { grid-column:1; grid-row:auto; }
+    .meet .cine, .meet .rol, .meet .subiect, .meet details, .meet .steag { grid-column:1; }
+
     .viz .plot { height:104px; }
     /* Eleven "2016"s do not fit across 320px. Counted from the END so the most recent
        year is always the one kept. */
@@ -331,6 +365,11 @@
     <select id="aspect"></select>
   </div>
 
+  <div class="subnav" id="subnav-facet" hidden>
+    <label for="facet">Instituție</label>
+    <select id="facet"></select>
+  </div>
+
   <div class="controls">
     <div>
       <label for="an">An</label>
@@ -358,6 +397,9 @@
   <div id="dosar"></div>
   <!-- Drawn from the rows already in the table below, so the two cannot disagree. -->
   <div id="grafic"></div>
+  <!-- A register of meetings is a chronological log. Rendered as a grid it was 6.992px
+       wide on a 760px screen. -->
+  <div id="flux"></div>
   <div class="wrap" id="wrap-out"><table id="out" class="tbl"><thead></thead><tbody></tbody></table></div>
 
   <nav class="pager" id="pager" hidden>
@@ -703,15 +745,40 @@ const VIEWS = {
     note: 'Registrul întâlnirilor dintre decidenți și terți. O întâlnire este LEGALĂ, ' +
           'iar registrul există tocmai pentru a o face vizibilă — prezența aici nu ' +
           'spune nimic despre vreun contract și nu este legată de datele de achiziții.',
-    sql: (f) => `
+    // A register of meetings is a chronological log, and forcing it into a grid made it
+    // unreadable. Measured at 760px: the table was 6.992px wide — nine screens — and the
+    // `concluzii` column took 3.312px of that to show a single dash, because it is empty
+    // in 569 of 666 rows. Meanwhile `descriere`, the one field that is NEVER empty and
+    // says what the meeting was actually about, was not displayed at all.
+    feed: true,
+    sql: (f) => {
+      const cond = [];
+      if (f.q) {
+        const like = lit('%' + f.q + '%');
+        cond.push(`(decident ILIKE ${like} OR institutie ILIKE ${like}`
+                + ` OR functie ILIKE ${like} OR titlu ILIKE ${like}`
+                + ` OR descriere ILIKE ${like})`);
+      }
+      if (f.facet) cond.push(`institutie = ${lit(f.facet)}`);
+      return `
       SELECT data_intalnirii, decident, functie, institutie, titlu,
-             locul_intalnirii, concluzii, anulat
+             descriere, locul_intalnirii, concluzii, anulat, justificare_anulare
       FROM read_parquet(${lit(url('ruti.parquet'))})
-      ${f.q ? `WHERE decident ILIKE ${lit('%' + f.q + '%')}
-            OR institutie ILIKE ${lit('%' + f.q + '%')}
-            OR titlu ILIKE ${lit('%' + f.q + '%')}
-            OR descriere ILIKE ${lit('%' + f.q + '%')}` : ''}
-      ${f.tail('data_intalnirii DESC')}`,
+      ${cond.length ? `WHERE ${cond.join('\n        AND ')}` : ''}
+      ${f.tail('data_intalnirii DESC')}`;
+    },
+    // The natural facet for this register, and the only one it has: 92 people across 35
+    // institution names. The search box covers the rest.
+    facet: {
+      col: 'institutie',
+      eticheta: 'Instituție',
+      sql: () => `
+        SELECT institutie, count(*) n
+        FROM read_parquet(${lit(url('ruti.parquet'))})
+        WHERE institutie IS NOT NULL AND institutie <> ''
+        GROUP BY institutie
+        ORDER BY n DESC`,
+    },
   },
   furnizori: {
     label: 'Furnizori',
@@ -970,6 +1037,7 @@ function filters() {
     an: /^\d{4}$/.test($('an').value) ? $('an').value : '',
     q: $('q').value.trim(),
     minn: Math.max(1, parseInt($('minn').value, 10) || 1),
+    facet: facetValue,
     // The reader's order if there is one, the view's own if not — and one row more than
     // the page holds, which is how the page knows whether a next page exists without
     // paying for a COUNT over the whole file.
@@ -1026,7 +1094,7 @@ function deflate(sql, view) {
 // into the SQL, and an ORDER BY carries none of them. Without it every view's sql() would
 // throw on the probe and fall back to showing both controls everywhere.
 const CONTROL_PROBE = Object.freeze({
-  an: '__AN__', minn: '__MINN__', q: '__Q__', baza: '', tail: () => '',
+  an: '__AN__', minn: '__MINN__', q: '__Q__', baza: '', facet: '', tail: () => '',
 });
 
 function controlsFor(key) {
@@ -1293,11 +1361,127 @@ function fillTable(el, table, { onRow = null, maxRows = Infinity, sortable = fal
   return Math.min(table.numRows, maxRows);
 }
 
+// Fill the facet dropdown from the data, once, and keep whatever is selected.
+//
+// The counts are part of the label because a list of 35 institution names sorted
+// alphabetically tells a reader nothing about where to look. Sorted by count, with the
+// count shown, the first few entries ARE the answer to "who does this register mostly
+// cover".
+//
+// Worth knowing while reading it: the same ministry appears twice, once with diacritics
+// and once without — "Ministerul Dezvoltarii Lucrarilor Publice si Administratiei" (112)
+// and "Ministerul Dezvoltării, Lucrărilor Publice și Administrației" (65). That is how
+// the register publishes them and this page does not silently merge them: joining two
+// spellings would mean asserting they are the same body, which is a judgement, not data.
+let facetLoaded = '';
+let facetValue = '';
+async function fillFacet(facet) {
+  const sel = $('facet');
+  if (facetLoaded === facet.col) { sel.value = facetValue; return; }
+  try {
+    const r = await conn.query(facet.sql());
+    sel.textContent = '';
+    const all = document.createElement('option');
+    all.value = ''; all.textContent = '— toate —';
+    sel.append(all);
+    for (const row of r.toArray()) {
+      const o = document.createElement('option');
+      o.value = String(row[facet.col]);
+      o.textContent = `${row[facet.col]} (${Number(row.n).toLocaleString('ro-RO')})`;
+      sel.append(o);
+    }
+    facetLoaded = facet.col;
+    // The options exist now, so the control can finally show what the query already
+    // used. A value naming an institution the register no longer lists simply leaves
+    // the control on "toate" — the query behind it did the same.
+    sel.value = facetValue;
+  } catch {
+    // No facet is a worse page, not a broken one: the search box still reaches the
+    // same rows.
+    $('subnav-facet').hidden = true;
+  }
+}
+
+// One meeting, one card, newest first.
+//
+// The register is a chronological log and a grid was the wrong shape for it. Measured at
+// 760px, the table was 6.992px wide — nine screens — because every cell is nowrap and one
+// of the columns holds free text averaging 210 characters. `concluzii` alone took 3.312px
+// to render a single dash: it is empty in 569 of 666 rows. And `descriere`, the only field
+// that is never empty and the one that says what the meeting was about, was not in the
+// table at all.
+//
+// DATE ONLY, never a time. The stored timestamps cluster on 02:00 (136 rows) and 01:00
+// (34) — those are date-only records carrying a timezone offset, not meetings held at two
+// in the morning — while 10:00 to 15:00 look like real times. There is no way to tell one
+// from the other row by row, so printing any of them would be inventing a fact.
+function renderFeed(table, maxRows) {
+  const host = $('flux');
+  host.textContent = '';
+  const camp = (dd, eticheta, v) => {
+    if (v === null || v === undefined || String(v).trim() === '') return;
+    const dt = document.createElement('dt'); dt.textContent = eticheta;
+    const el = document.createElement('dd'); el.textContent = String(v);
+    dd.append(dt, el);
+  };
+  for (const row of table.toArray().slice(0, maxRows)) {
+    const art = document.createElement('article');
+    art.className = 'meet' + (row.anulat ? ' anulata' : '');
+
+    const t = document.createElement('time');
+    const zi = dayOf(row.data_intalnirii);
+    if (zi) { t.dateTime = zi; t.textContent = zi; }
+    art.append(t);
+
+    const cine = document.createElement('div');
+    cine.className = 'cine';
+    cine.textContent = row.decident || '—';
+    art.append(cine);
+
+    const rol = document.createElement('div');
+    rol.className = 'rol';
+    rol.textContent = [row.functie, row.institutie].filter(Boolean).join(' · ');
+    art.append(rol);
+
+    if (row.anulat) {
+      const flag = document.createElement('span');
+      flag.className = 'steag';
+      flag.textContent = 'anulată';
+      art.append(flag);
+    }
+
+    if (row.titlu) {
+      const p = document.createElement('p');
+      p.className = 'subiect';
+      p.textContent = row.titlu;
+      art.append(p);
+    }
+
+    // Everything long folds away. `descriere` runs to 11.999 characters in one row, so
+    // it cannot sit in the card body — but it is also the field worth reading, so it is
+    // one click away rather than absent.
+    const det = document.createElement('details');
+    const sum = document.createElement('summary');
+    sum.textContent = 'Detalii';
+    det.append(sum);
+    const dl = document.createElement('dl');
+    camp(dl, 'Descriere', row.descriere);
+    camp(dl, 'Locul întâlnirii', row.locul_intalnirii);
+    camp(dl, 'Concluzii', row.concluzii);
+    camp(dl, 'Motivul anulării', row.justificare_anulare);
+    if (dl.children.length) { det.append(dl); art.append(det); }
+
+    host.append(art);
+  }
+}
+
 function render(table) {
   const head = $('out').tHead, body = $('out').tBodies[0];
   head.innerHTML = ''; body.innerHTML = '';
   $('grafic').textContent = '';
+  $('flux').textContent = '';
   const size = pageSizeFor(current);
+  const feed = !!(VIEWS[current] && VIEWS[current].feed);
   // One row more than the page holds was fetched on purpose; its only job is to answer
   // "is there a next page" without a COUNT over the whole file.
   const more = table.numRows > size;
@@ -1323,6 +1507,15 @@ function render(table) {
   }
   const fig = chartFor(VIEWS[current] && VIEWS[current].chart, table, size);
   if (fig) $('grafic').append(fig);
+  if (feed) {
+    renderFeed(table, size);
+    const from = pagina * size + 1;
+    status(pagina || more
+      ? `Întâlnirile ${from.toLocaleString('ro-RO')}–${(pagina * size + shown).toLocaleString('ro-RO')}`
+        + `${more ? '' : ' (ultimele)'}.`
+      : `${numeral(shown, 'întâlnire', 'întâlniri')}.`);
+    return;
+  }
   fillTable($('out'), table, {
     maxRows: size,
     sortable: true,
@@ -1464,7 +1657,7 @@ async function suggestOtherAspect() {
 // GitHub Pages: a path or a query the server has never heard of returns 404, while
 // everything after "#" never leaves the browser. It also means an old link degrades to
 // the summary rather than to an error.
-const URL_KEYS = ['v', 's', 'q', 'an', 'minn', 'baza', 'sort', 'dir', 'pag',
+const URL_KEYS = ['v', 's', 'q', 'an', 'minn', 'baza', 'sort', 'dir', 'pag', 'inst',
                   'cpv', 'p', 'um', 'mp', 'din', 'pana'];
 
 // Set while a hash is being read back, so applying a link does not immediately rewrite it.
@@ -1495,6 +1688,7 @@ function currentState() {
   // Where in the results, not just which results. A link to "the cheapest unit prices,
   // page 3" is the kind of thing worth sending someone.
   if (validSort(sortCol)) { s.sort = sortCol; s.dir = sortDir; }
+  if (VIEWS[current] && VIEWS[current].facet && facetValue) s.inst = facetValue;
   if (pagina > 0) s.pag = String(pagina + 1);   // 1-based in the link, 0-based inside
   if (current === 'detaliu' && drill) {
     // A group is identified by all four parts, and any of them may legitimately be null —
@@ -1559,6 +1753,9 @@ function applyHash() {
     // the options leaves the select empty, which is exactly "— toți —".
     $('an').value = p.get('an') || '';
     $('baza').value = p.get('baza') || '';
+    // The variable, not the control: on a cold load the options do not exist yet, and
+    // assigning a value that matches no option is silently dropped.
+    facetValue = p.get('inst') || '';
     $('minn').value = p.get('minn') || '1';
     // Dropped rather than trusted: a column name goes into SQL, and this one arrives from
     // whatever was in the address bar.
@@ -1833,14 +2030,19 @@ function selectTab(key, ind) {
   // across, the sort names a column the new view does not have — and the reader lands on
   // page 4 of something they have not seen page 1 of. applyHash() sets them afterwards
   // when a link carries its own.
-  if (!applying && key !== current) { pagina = 0; sortCol = ''; sortDir = 'desc'; }
+  if (!applying && key !== current) {
+    pagina = 0; sortCol = ''; sortDir = 'desc'; facetValue = '';
+  }
   current = key;
   indicator = ind || null;
   $('inapoi').style.display = key === 'detaliu' ? 'block' : 'none';
   // The entity file replaces the results table rather than appearing under it; leaving
   // the previous view's 200 rows below a company profile would read as part of it.
   const isDosar = key === 'dosar';
-  $('wrap-out').hidden = isDosar;
+  const isFeed = !!(VIEWS[key] && VIEWS[key].feed);
+  // The table, the feed and the entity file are three alternatives for the same slot.
+  $('wrap-out').hidden = isDosar || isFeed;
+  if (!isFeed) $('flux').textContent = '';
   // The file draws its charts inside its own sections and never calls render(), which is
   // what clears this. Without the line, moving from the summary to a company's file
   // leaves the summary's chart stranded above it, captioned as national spending and
@@ -1880,6 +2082,14 @@ function selectTab(key, ind) {
   // The grouped views share one tab, so the selector shows for any of them and keeps
   // itself in step when a view is reached some other way — the hero search falls back to
   // `autoritati`, which is one of them.
+  // Only the meetings register has a facet today; it is declared on the view rather
+  // than hard-coded here so a second one costs a `facet:` block and nothing else.
+  const facet = VIEWS[key] && VIEWS[key].facet;
+  $('subnav-facet').hidden = !facet;
+  if (facet) {
+    $('subnav-facet').querySelector('label').textContent = facet.eticheta;
+    fillFacet(facet);
+  }
   const grouped = !!(VIEWS[key] && VIEWS[key].group === ENTITY_GROUP);
   $('subnav-entitate').hidden = !grouped;
   if (grouped) $('aspect').value = key;
@@ -2079,6 +2289,7 @@ $('baza').addEventListener('change', rerun);
 // happened to press Caută, so on every view without a search box — the summary, contracts
 // — it looked simply broken.
 $('minn').addEventListener('change', rerun);
+$('facet').addEventListener('change', () => { facetValue = $('facet').value; rerun(); });
 
 // Back and Forward move between views rather than off the site. Guarded on `ready`
 // because a hash can be navigated before the engine exists, and selectTab would refuse
