@@ -90,13 +90,28 @@ class Meeting:
 
 
 def _parse_dt(value: Any) -> datetime | None:
+    """Parse a source timestamp into naive UTC.
+
+    The register sends offset-bearing strings, and `fromisoformat` faithfully returns an
+    AWARE datetime for those. That is where reproducibility broke: the Parquet column is
+    a naive TIMESTAMP, and DuckDB fills a naive column from an aware value by shifting it
+    into the session's timezone. The same meeting therefore landed at midnight when the
+    ingest ran on a UTC runner and at 02:00 when it ran on a CEST laptop — the published
+    file depended on where it was built, which the project's reproducibility rule forbids.
+
+    Normalising here means the column means one thing everywhere. A value that arrives
+    without an offset is left alone, which is what it was already treated as.
+    """
     if not value:
         return None
     try:
-        return datetime.fromisoformat(str(value))
+        parsed = datetime.fromisoformat(str(value))
     except ValueError:
         log.warning("unparsable date %r", value)
         return None
+    if parsed.tzinfo is None:
+        return parsed
+    return parsed.astimezone(UTC).replace(tzinfo=None)
 
 
 def to_meeting(row: dict[str, Any]) -> Meeting:
@@ -190,7 +205,13 @@ def to_records(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def write(records: list[dict[str, Any]], out_path: Path | None = None) -> Path:
-    """Write the normalised register to Parquet."""
+    """Write the normalised register to Parquet.
+
+    Both TIMESTAMP columns are naive UTC — `_parse_dt` guarantees it. That guarantee is
+    what makes this file byte-reproducible: DuckDB fills a naive column from an *aware*
+    value by shifting it into the session timezone, so an aware input here would make the
+    output depend on the machine that built it.
+    """
     import duckdb
 
     target = Path(out_path or Path(ROOT) / "data" / "ruti" / "meetings.parquet")
