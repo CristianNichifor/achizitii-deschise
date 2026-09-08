@@ -1055,6 +1055,9 @@ function matcher(term) {
 }
 
 let manifest = null, conn = null, current = 'panorama', indicator = null;
+// The front door's rows, fetched as JSON before the engine exists. Null when the bundle
+// predates them, in which case the front door computes its own blocks once conn is up.
+let panoramaData = null;
 
 // ---------------------------------------------------------------------------
 // Order and paging.
@@ -1539,6 +1542,23 @@ function fillTable(el, table, {
   return Math.min(table.numRows, maxRows);
 }
 
+// fillTable() and chartFor() read Arrow tables. The front door's rows now arrive as plain
+// JSON, so they are wrapped in the smallest object that satisfies both readers rather than
+// either growing a second code path.
+//
+// No field is declared as a date. fillTable sniffs dates off the type string and then does
+// `new Date(Number(v))`, which turns the ISO strings JSON carries into NaN. The only date
+// columns here are `din` and `pana_la`, which are hidden from the table anyway and reach
+// the drill-down through dayOf(), which handles strings.
+function arrowLike(rows) {
+  const names = rows.length ? Object.keys(rows[0]) : [];
+  return {
+    numRows: rows.length,
+    schema: { fields: names.map((name) => ({ name, type: { toString: () => 'Utf8' } })) },
+    toArray: () => rows,
+  };
+}
+
 // The front door.
 //
 // Three doorways and a coverage statement. Every figure here is a link into a view that
@@ -1551,6 +1571,7 @@ function fillTable(el, table, {
 // because it qualifies everything above it and has to be read after, not skipped before.
 async function runPanorama() {
   const host = $('panorama');
+  if (!panoramaData && !conn) return;   // nothing to draw with yet
   host.textContent = '';
 
   // Read the precomputed file where the bundle has one, and fall back to computing it
@@ -1565,16 +1586,18 @@ async function runPanorama() {
   // the bulk archive can leave a bundle without them, and an older published bundle has
   // neither. A front door that goes blank because a file is absent would be a worse
   // failure than a slow one.
-  const has = (n) => (manifest.datasets || []).some((d) => d.name === n);
-  const gata = (name, live) => (has(name)
-    ? `SELECT * FROM read_parquet(${lit(url(name + '.parquet'))})`
-    : live);
+  // The precomputed blocks, if the bundle has them. Fetched before the engine exists and
+  // usually already in hand by the time this runs — see the boot block.
+  const gata = panoramaData;
 
   // Started together, awaited together. A failed query is one doorway fewer, never a
   // broken page, so each catches its own.
   const nMin = manifest.min_group_for_median || 5;
-  const cereri = Promise.all([
-    !manifest.preturi_unitare ? null : conn.query(gata('panorama_preturi', `
+  const cereri = gata ? Promise.resolve([
+    gata.preturi ? arrowLike(gata.preturi) : null,
+    gata.cumparatori ? arrowLike(gata.cumparatori) : null,
+  ]) : Promise.all([
+    !manifest.preturi_unitare ? null : conn.query(`
       SELECT denumire_key, um, n,
              -- Immediately after the count, not last: it is the number this block is
              -- about, and at the end of seven columns it was the one cut off the right
@@ -1585,15 +1608,15 @@ async function runPanorama() {
       FROM read_parquet(${lit(url('preturi_unitare.parquet'))})
       WHERE n >= ${nMin} AND p10_ron > 0
       ORDER BY de_cate_ori DESC NULLS LAST
-      LIMIT 6`)).catch(() => null),
-    conn.query(gata('panorama_cumparatori', `
+      LIMIT 6`).catch(() => null),
+    conn.query(`
       SELECT autoritate_cui, any_value(autoritate) AS autoritate,
              sum(n)::BIGINT AS n, round(sum(valoare_totala_ron)) AS valoare_totala_ron
       FROM read_parquet(${lit(url('autoritati_an.parquet'))})
       WHERE autoritate_cui IS NOT NULL AND autoritate_cui <> ''
       GROUP BY autoritate_cui
       ORDER BY valoare_totala_ron DESC NULLS LAST
-      LIMIT 6`)).catch(() => null),
+      LIMIT 6`).catch(() => null),
   ]);
   const [preturi, cumparatori] = await cereri;
 
@@ -2438,6 +2461,17 @@ function goDefault() {
 }
 
 async function run() {
+  // Drawn from JSON, with no engine. This is the path a first-time visitor takes: the
+  // front door appears while DuckDB-Wasm is still downloading behind it.
+  if (current === 'panorama' && panoramaData && !conn) {
+    syncUrl();
+    try {
+      await runPanorama();
+    } catch (err) {
+      console.error(err);
+    }
+    return;
+  }
   if (!conn) return;
   // Synchronously, before the first await: `applying` is still set while a link is being
   // read back, and that is what stops reading a hash from immediately rewriting it.
@@ -2485,7 +2519,9 @@ function selectTab(key, ind) {
   // Disabling the tab buttons is not enough on its own: the signal dropdown also calls
   // this, and it is not a button. Without the guard, changing it mid-boot would wipe the
   // loading message.
-  if (!ready) return;
+  // The front door is drawable before the engine exists, because its rows arrive as JSON.
+  // Nothing else is: every other view is a query.
+  if (!ready && !(key === 'panorama' && panoramaData)) return;
   // Changing what you are looking at is a navigation; changing how it is filtered is not.
   pushNext = true;
   // A page number and a sort column belong to the view they were chosen in. Carried
@@ -2690,6 +2726,27 @@ function selectTab(key, ind) {
     });
   }
 
+  // Draw the front door NOW, from JSON, before the engine is even requested.
+  //
+  // Measured on the published site: a first visit spent about four seconds on a spinner
+  // while 3,4 MB of DuckDB-Wasm and a 0,7 MB worker downloaded — to read three kilobytes
+  // of data. The engine is what the TABS need; the landing page needs a fetch.
+  //
+  // Only when the address bar names nothing else. A shared link to a table has to wait for
+  // the engine regardless, and drawing the front door first would make it flash past.
+  let earlyDrawn = false;
+  if (manifest.panorama && !new URLSearchParams(location.hash.replace(/^#/, '')).get('v')) {
+    try {
+      panoramaData = await (await fetch(url(manifest.panorama.file))).json();
+      selectTab('panorama');
+      earlyDrawn = true;
+    } catch {
+      // A missing or malformed file simply means the old path: the engine loads and the
+      // front door computes its own blocks.
+      panoramaData = null;
+    }
+  }
+
   try {
     // Staged, because the alternative is one sentence sitting still for seconds. The
     // stage boundaries are placed where the time actually goes, measured cold: bundle
@@ -2698,10 +2755,16 @@ function selectTab(key, ind) {
     //
     // The browser caches the engine, so this is paid once rather than per visit. Worth
     // saying out loud: a visitor who believes every page view costs 4 MB leaves.
-    booting('Se pregătește motorul…');
+    // With the front door already on screen the wording changes: nothing is missing, the
+    // filtering is not ready yet. The spinner still runs, because the tabs are disabled
+    // and a reader who clicks one deserves to know why.
+    booting(earlyDrawn ? 'Se pregătesc filtrele și căutarea…' : 'Se pregătește motorul…');
     const bundle = await duckdb.selectBundle(duckdb.getJsDelivrBundles());
     const worker = await duckdb.createWorker(bundle.mainWorker);
-    booting('Se descarcă baza de date (~4 MB, o singură dată — apoi rămâne în browser)…');
+    booting(earlyDrawn
+      ? 'Se descarcă motorul de interogare (~4 MB, o singură dată). Panorama de mai jos '
+        + 'este deja completă.'
+      : 'Se descarcă baza de date (~4 MB, o singură dată — apoi rămâne în browser)…');
     const db = new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger(duckdb.LogLevel.WARNING), worker);
     await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
     conn = await db.connect();
@@ -2713,7 +2776,10 @@ function selectTab(key, ind) {
     for (const b of $('tabs').children) b.disabled = false;
     // A link decides what opens; the summary is only the fallback. Nothing before this
     // point could honour a hash — there was no engine to query with.
-    if (!applyHash()) goDefault();
+    // Already drawn from JSON, and the hash named nothing else — leave it alone rather
+    // than redrawing an identical page.
+    if (!applyHash() && !earlyDrawn) goDefault();
+    else if (earlyDrawn) status('');
   } catch (err) {
     status(`Eroare la inițializare: ${err.message}. Servește folderul prin HTTP (nu file://).`);
     console.error(err);
