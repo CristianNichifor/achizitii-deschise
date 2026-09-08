@@ -105,3 +105,40 @@ The first mistake was inferring consent from performance: 37 records a second wi
 latency meant the server answered quickly, never that it agreed. The second was fixing
 that by picking a smaller number that still felt polite, instead of looking for whether
 the operator had said what the number should be. They had, three weeks earlier.
+
+## Request sent, 2026-09-08
+
+A request went to ADR — the authority that operates SEAP — at `contact@adr.gov.ro`, copied
+to `contact.companii@e-licitatie.ro`. Those addresses come from adr.gov.ro itself; a search
+for "SEAP support" returns mostly private resellers, including a `@yahoo.com` address, and
+none of them are official channels.
+
+It asks three things:
+
+1. that the restriction on the affected address be lifted;
+2. whether a **bulk export including line items** exists — quantities and unit prices, the
+   fields no data.gov.ro export carries — at any price or on request;
+3. failing that, whether there is a registration or whitelist procedure for open-data
+   reusers, and what collection rate they would consider acceptable.
+
+It states the breach plainly rather than working around it: ~40 requests a second against a
+published ceiling of 500 per 5 minutes, with the announcement read only after the block. It
+records the correction already shipped — 1.5 rps, with a test that fails if anyone raises
+it past the published limit — and offers to stop the historical collection altogether if
+they would prefer that.
+
+It does not ask for a higher rate as a favour, and it does not mention distributing traffic
+across addresses. Both would turn a legitimate request into a negotiation about how much
+can be taken before someone objects.
+
+### What happens while waiting
+
+Nothing changes. The daily job keeps running from GitHub runners, which were never blocked
+— one collected 11,271 line items on 2026-09-08 at 02:56 UTC — at a rate inside the
+published limit. Only local development is cut off.
+
+The answer decides the shape of the project. A bulk export makes the ~266-day figure
+irrelevant. No bulk export makes the daily archive the product, growing forward, which the
+measurements support anyway: median-bearing product groups grew 21 → 75 → 136 → 253 over
+the first four weekdays collected, faster than linearly, because each new day both adds
+groups and pushes existing ones past the n=5 threshold.
