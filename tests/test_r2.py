@@ -98,9 +98,15 @@ def test_partial_credentials_are_refused(monkeypatch) -> None:
 
 
 def test_secrets_are_never_written_to_the_repo() -> None:
-    """A credential in a tracked file is the one mistake that cannot be undone."""
+    """A credential in a tracked file is the one mistake that cannot be undone.
+
+    Deliberately no substring check against the endpoint host here: CodeQL reads
+    `"r2.cloudflarestorage.com" in src` as URL sanitization and flags it high severity,
+    which is fair — that pattern IS a bypass when the string really is a URL. The
+    endpoint is asserted properly, by equality, in
+    test_config_is_read_from_the_environment.
+    """
     src = Path("src/achizitii/r2.py").read_text()
-    assert "r2.cloudflarestorage.com" in src
-    for leak in ("aws_access_key_id=\"", "AKIA", "secret_access_key=\""):
+    for leak in ('aws_access_key_id="', "AKIA", 'secret_access_key="'):
         assert leak not in src, f"{leak!r} looks like a hardcoded credential"
-    assert 'os.environ.get("R2_ACCOUNT_ID"' in src or "R2_ACCOUNT_ID" in src
+    assert "os.environ.get" in src, "credentials must come from the environment"
