@@ -69,3 +69,17 @@ def test_the_download_size_is_claimed_on_the_stage_that_pays_it(source: str) -> 
     assert "MB" not in boot_block.split("booting(")[-1], (
         "the pre-selectBundle stage claims a download size, but that stage is ~170ms"
     )
+
+
+def test_the_page_does_not_ask_for_a_file_that_is_not_there() -> None:
+    """Every visit requested /favicon.ico and collected a 404 — the only console error
+    left on the published site, and the one that made a real error harder to notice
+    while testing.
+
+    Inline, as a data URI, because a separate file would be the first asset this page
+    depends on: it is served as a single document from a static host with no build, and
+    that is worth keeping.
+    """
+    source = INDEX.read_text(encoding="utf-8")
+    assert 'rel="icon"' in source
+    assert "data:image/svg+xml" in source
