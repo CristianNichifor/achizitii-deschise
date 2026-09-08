@@ -33,7 +33,10 @@
   select, input, button { font:inherit; padding:.45rem .6rem; border:1px solid var(--line);
           border-radius:6px; background:var(--paper); color:var(--ink); }
   .hero { display:flex; gap:.5rem; margin:0 0 .4rem; }
-  .hero input { flex:1; padding:.7rem .9rem; font-size:1rem; }
+  /* min-width:0 because a text input carries an intrinsic width that a flex item will
+     not shrink below by default; without it the search button is pushed off the right
+     edge of a 320px screen and the whole page scrolls sideways. */
+  .hero input { flex:1; min-width:0; padding:.7rem .9rem; font-size:1rem; }
   .hero button { padding:.7rem 1.4rem; font-size:1rem; background:var(--accent);
                  color:#fff; border-color:transparent; cursor:pointer; font-weight:600; }
   .hero button:disabled { opacity:.5; cursor:progress; }
@@ -57,6 +60,9 @@
   th { background:var(--sub); font-weight:600; font-size:.72rem; text-transform:uppercase;
        letter-spacing:.04em; color:var(--muted); position:sticky; top:0; }
   td.num { text-align:right; font-family:var(--mono); font-variant-numeric:tabular-nums; }
+  /* Money is what the table is for; it should not weigh the same as a row count. */
+  td.money { color:var(--ink); font-weight:600; }
+  td.money[title] { cursor:help; }
   tbody tr:last-child td { border-bottom:none; }
   details { margin-top:1.5rem; }
   summary { cursor:pointer; color:var(--muted); font-size:.85rem; }
@@ -82,6 +88,26 @@
   /* Vestibular safety: the spinner and shimmer are decoration, never the message. */
   @media (prefers-reduced-motion: reduce) {
     .boot::before, .skeleton span { animation:none; }
+  }
+
+  /* On a 390px phone the eleven tabs wrapped onto FOUR rows. Together with the hero and
+     the caveat that pushed the table entirely below the fold — you could not see a single
+     figure without scrolling, on a page whose whole purpose is the figures. One
+     swipeable row instead. The caveat above it stays put: it is the thing a reader most
+     needs before reading numbers, so it is not what gets collapsed to save space. */
+  @media (max-width: 640px) {
+    body { padding:1.25rem .9rem 3rem; }
+    .tabs { flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none;
+            -webkit-overflow-scrolling:touch; }
+    .tabs::-webkit-scrollbar { display:none; }
+    .tabs button { white-space:nowrap; flex:none; }
+    .controls { gap:.5rem; }
+    /* min-width:0 and a full-width control, or the select keeps its intrinsic width and
+       pushes the whole page sideways — a flex item will not shrink below its content
+       without it. */
+    .controls > div { flex:1 1 8rem; min-width:0; }
+    .controls select, .controls input { width:100%; }
+    h1 { font-size:1.35rem; }
   }
 </style>
 </head>
@@ -202,6 +228,21 @@ const LABELS = {
   numar_oferte: 'nr. oferte', tip_procedura: 'procedură',
 };
 const label = (c) => LABELS[c] || c.replace(/_/g, ' ');
+
+// Romanian scale words, not SI suffixes: "mld" and "mil" are what a reader here expects,
+// and "3,85 B" would be ambiguous between billion and miliard anyway.
+//
+// The cut-off is a million. Below it the full figure is already legible and often more
+// useful — a median of 32.984,17 lei says something that "0,03 mil" does not.
+function ron(v) {
+  const n = Number(v);
+  const abs = Math.abs(n);
+  const fixed = (x, d) =>
+    x.toLocaleString('ro-RO', { minimumFractionDigits: d, maximumFractionDigits: d });
+  if (abs >= 1e9) return `${fixed(n / 1e9, 2)} mld`;
+  if (abs >= 1e6) return `${fixed(n / 1e6, 1)} mil`;
+  return n.toLocaleString('ro-RO');
+}
 
 // Every view names the columns it selects rather than using *, so a schema change
 // upstream surfaces as an error here instead of silently reshaping the page.
@@ -506,6 +547,11 @@ function render(table) {
     return;
   }
   const cols = table.schema.fields.map((f) => f.name);
+  // Sums are the point of this page, and "3.854.469.918" is not a number anyone reads —
+  // you have to count the dots to find out whether it is millions or billions, which is
+  // exactly the comparison the table exists to make. Abbreviated above a million; the
+  // exact figure stays one hover away, and is still what gets copied out of the SQL box.
+  const money = (c) => c.endsWith('_ron');
   // Arrow hands back Date32/Date64 as epoch milliseconds, which are numbers as far as
   // JS is concerned — so a date column rendered "2026-09-04" as "1.788.480.000.000"
   // under ro-RO grouping. The schema knows the difference; column names do not.
@@ -527,8 +573,14 @@ function render(table) {
       const isLabel = c === 'an' || c.endsWith('_cui') || c === 'cpv';
       td.textContent = v === null || v === undefined ? '—'
         : dates.has(c) ? new Date(Number(v)).toISOString().slice(0, 10)
+        : numeric && !isLabel && money(c) ? ron(v)
         : numeric && !isLabel ? Number(v).toLocaleString('ro-RO') : String(v);
       if (typeof v === 'number' || typeof v === 'bigint') td.className = 'num';
+      if (numeric && !isLabel && money(c) && v !== null && v !== undefined) {
+        td.classList.add('money');
+        // The exact figure is never destroyed, only folded away.
+        td.title = `${Number(v).toLocaleString('ro-RO')} RON`;
+      }
     }
   }
   status(`${table.numRows} rânduri${table.numRows === 200 ? ' (limitat la 200)' : ''}.`);
