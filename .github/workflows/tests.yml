@@ -1,0 +1,48 @@
+name: tests
+
+# WHY THIS EXISTS
+#
+# It did not, and that had already cost something. Until now the only jobs that ran
+# `pytest` were `daily.yml` and `bulk.yml`, neither of which triggers on a pull request.
+# The checks reported on every PR — "Analyze (actions)", "Analyze (python)", "CodeQL" —
+# are CodeQL only. A green PR meant the code had been scanned, not that it worked.
+#
+# It went unnoticed because the tests were being run by hand before each push, so they
+# genuinely did pass. Then a test was added that scanned every tracked file, and it
+# passed locally only because the file itself was still untracked. Once merged it made
+# the suite fail on the next run, and nothing in CI noticed for a whole PR cycle.
+#
+# Lint runs here too, for the same reason.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  # A newer commit on the same PR makes the older run irrelevant.
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -e ".[dev]"
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Tests
+        run: pytest -q
