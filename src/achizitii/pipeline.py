@@ -45,12 +45,55 @@ def daterange(start: date, end: date) -> Iterator[date]:
         day += timedelta(days=1)
 
 
-class AuthorityResolver:
-    """Resolve contracting authority -> county. Cached; authorities repeat heavily."""
+AUTHORITY_CACHE = Path(config.ROOT) / "data" / "autoritati.parquet"
+"""Contracting authorities learned by previous runs.
 
-    def __init__(self, client: SeapClient) -> None:
+These lookups are the second-largest cost in a run and the easiest to avoid paying twice.
+A real weekday holds ~8,200 acquisitions across ~2,992 distinct authorities: the in-memory
+cache already removes 64% of the calls, but the remaining 2,992 are sequential at 4 rps,
+which is ~12 minutes of a ~45 minute day. Persisting them means the next run pays only for
+authorities it has never seen, and a backfill that walks month after month converges on
+paying nothing at all.
+
+Safe to delete: a missing file just means the next run is cold. Delete it if an authority
+is known to have been re-registered in another county.
+"""
+
+
+class AuthorityResolver:
+    """Resolve contracting authority -> county.
+
+    Cached twice over, because authorities repeat both within a day and across days.
+    """
+
+    def __init__(self, client: SeapClient, cache_path: Path | None = None) -> None:
         self._client = client
         self._cache: dict[int, dict[str, Any]] = {}
+        self._path = Path(cache_path) if cache_path is not None else AUTHORITY_CACHE
+        self._failed: set[int] = set()
+        self._load()
+
+    def _load(self) -> None:
+        if not self._path.is_file():
+            return
+        try:
+            import duckdb
+
+            rows = duckdb.connect().execute(
+                "SELECT authority_id, county, city, fiscal_number, is_utility"
+                f" FROM read_parquet('{self._path}')"
+            ).fetchall()
+        except Exception as exc:  # noqa: BLE001 - a bad cache must never stop a run
+            log.warning("authority cache unreadable (%s); starting cold", exc)
+            return
+        for aid, county, city, fiscal, utility in rows:
+            self._cache[int(aid)] = {
+                "county": county,
+                "city": city,
+                "fiscal_number": fiscal,
+                "is_utility": utility,
+            }
+        log.info("authority cache: %d known before this run", len(self._cache))
 
     def get(self, authority_id: int | None) -> dict[str, Any]:
         if not authority_id:
@@ -61,14 +104,49 @@ class AuthorityResolver:
             except Exception as exc:  # noqa: BLE001 - a missing authority must not kill a run
                 log.warning("authority %s lookup failed: %s", authority_id, exc)
                 raw = {}
+                # Remember the failure so save() does not write it down. A cached empty
+                # row would turn one timeout into a permanently county-less authority,
+                # because nothing would ever look it up again.
+                self._failed.add(authority_id)
             clean = gdpr.scrub(raw or {})
+            fiscal = clean.get("fiscalNumber")
+            utility = clean.get("isUtility")
             self._cache[authority_id] = {
                 "county": clean.get("county"),
                 "city": clean.get("city"),
-                "fiscal_number": clean.get("fiscalNumber"),
-                "is_utility": clean.get("isUtility"),
+                # Normalised so a value read back from the cache is indistinguishable
+                # from a freshly fetched one. Provenance must not change a type.
+                "fiscal_number": None if fiscal is None else str(fiscal),
+                "is_utility": None if utility is None else bool(utility),
             }
         return self._cache[authority_id]
+
+    def save(self) -> int:
+        """Write successfully resolved authorities back to the cache. Returns the count."""
+        keep = {k: v for k, v in self._cache.items() if k not in self._failed}
+        if not keep:
+            return 0
+        import duckdb
+
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        con = duckdb.connect()
+        con.execute(
+            """CREATE TABLE a (authority_id BIGINT, county VARCHAR, city VARCHAR,
+                               fiscal_number VARCHAR, is_utility BOOLEAN)"""
+        )
+        con.executemany(
+            "INSERT INTO a VALUES (?,?,?,?,?)",
+            [
+                [k, v["county"], v["city"], v["fiscal_number"], v["is_utility"]]
+                for k, v in sorted(keep.items())
+            ],
+        )
+        con.execute(
+            f"COPY (SELECT * FROM a ORDER BY authority_id) TO '{self._path}' "
+            "(FORMAT PARQUET, COMPRESSION ZSTD)"
+        )
+        con.close()
+        return len(keep)
 
 
 def archived_ids(day: date) -> set[int]:
@@ -386,6 +464,10 @@ def run(
             all_rows.extend(rows)
             entry["items"] = len(rows)
             manifest.append(entry)
+            # Saved per day, not once at the end: the backfill job is expected to stop on
+            # its time budget mid-range, and a run that dies must not throw away the
+            # authorities it just paid for.
+            entry["authorities_cached"] = authorities.save()
             log.info("%s: %d items", day.isoformat(), len(rows))
 
     out = write_parquet(all_rows) if all_rows else None
