@@ -178,3 +178,40 @@ def test_one_renderer_draws_every_table(source: str) -> None:
     those rules would drift within a week."""
     assert "function fillTable(" in source
     assert source.count("function fillTable(") == 1
+
+
+def test_a_fiscal_code_is_never_widened_to_a_name(source: str) -> None:
+    """The rule this file already states, broken in its own implementation until measured.
+
+    `matcher()` matched a fiscal code AND, separately, the ANAF name resolved from it —
+    joined by OR. So DEDEMAN's file read 685,0 mil RON over 22 rows, of which only 672,1
+    mil across 11 rows is DEDEMAN S.R.L. (2816464). The remainder belonged to DEDEMAN
+    AUTOMOBILE S.R.L. (15934070) and DEDEMAN URBAN S.R.L. (47910541) — two other
+    companies, with two other fiscal codes, whose money was being attributed to a third.
+
+    Every table `matcher` is used against carries a fiscal code, so the name can only ever
+    widen the match, never rescue it.
+    """
+    body = _body(source, "function matcher(")
+    assert "if (cuiCol) parts.push(`${cuiCol} = ${lit(digits)}`);" in body
+    assert "else if (nameCol && nameLike)" in body, (
+        "the resolved name is a fallback for tables with no code, not an alternative to one"
+    )
+
+
+def test_the_signals_union_matches_a_code_as_a_code(source: str) -> None:
+    """Same defect, second place. `t.autoritate_cui ILIKE '%2816464%'` also matches
+    12816464 — and a substring predicate lets a Parquet reader prune nothing, which is why
+    sorting the findings files by autoritate_cui changed nothing until this was fixed.
+
+    The name path survives exactly where it was introduced for: three findings tables
+    identify a supplier by name alone, so a search for a fiscal code would otherwise find
+    nothing in them. It is now gated on the ABSENCE of furnizor_cui rather than applied
+    everywhere — measured on ofertant-unic-01, which has the column: of seven rows whose
+    supplier name contains DEDEMAN, zero are 2816464.
+    """
+    body = _body(source, "function entitySql(", 3000)
+    assert "const isCui = /^[0-9]{2,10}$/.test(digits);" in body
+    assert "t.autoritate_cui = ${cui}" in body
+    assert "t.autoritate_cui ILIKE" not in body, "a code is not a substring"
+    assert "!cols.includes('furnizor_cui') && nameLike" in body
