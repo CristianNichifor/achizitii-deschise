@@ -20,12 +20,14 @@ Three rules the published numbers follow, all inherited from METHODOLOGY.md:
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import logging
 import shutil
 import tempfile
 from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 import duckdb
@@ -683,26 +685,60 @@ PANORAMA_DATASETS = (
 )
 
 
-def _panorama(con: duckdb.DuckDBPyConnection, out: Path) -> list[dict[str, object]]:
-    """Build the front-door files from what was just published.
+def _panorama(con: duckdb.DuckDBPyConnection, out: Path) -> dict[str, object] | None:
+    """Build the front door as JSON, from what was just published.
 
-    Reads the written Parquet rather than the source views, so the numbers cannot drift
-    from the tables the front door links to. Runs in both modes: the price spreads change
-    on every daily run, and the buyers are cheap enough that rebuilding them costs nothing
-    and keeps the two files consistent with each other.
+    JSON RATHER THAN PARQUET, and that is the whole point of this function rather than an
+    implementation detail. Reading Parquet in the browser means booting DuckDB-Wasm — 3.4 MB
+    from a CDN plus a 0.7 MB worker — and the front door needs about three kilobytes of
+    data. Measured on the published site, that engine is what a first-time visitor spends
+    roughly four seconds waiting for before anything appears. As JSON the page can draw
+    itself from `fetch`, and the engine loads behind it for whoever opens a tab.
+
+    Reads the PUBLISHED Parquet rather than the source views, so the numbers cannot drift
+    from the tables the front door links to — `autoritati_an.valoare_totala_ron` is already
+    rounded per year, and aggregating `ad` directly would disagree with its own table by a
+    few lei for no visible reason.
     """
-    built: list[dict[str, object]] = []
     for name, view in (("autoritati_an", "pub_autoritati_an"),
                        ("preturi_unitare", "pub_preturi_unitare")):
         src = out / f"{name}.parquet"
         if not src.is_file():
-            return built     # nothing to summarise; the front door falls back to querying
+            return None      # the site falls back to querying for itself
         con.execute(
             f"CREATE OR REPLACE VIEW {view} AS SELECT * FROM read_parquet('{src}')"
         )
-    for d in PANORAMA_DATASETS:
-        built.append(_write(con, d, out))
-    return built
+
+    def rows(sql: str) -> list[dict[str, object]]:
+        cur = con.execute(sql)
+        names = [c[0] for c in cur.description]
+        out_rows = []
+        for row in cur.fetchall():
+            rec: dict[str, object] = {}
+            for name, value in zip(names, row, strict=True):
+                # JSON has no date and no decimal. Dates go out ISO, which is what the
+                # drill-down link already expects; everything numeric goes out as a number.
+                if isinstance(value, (dt.date, dt.datetime)):
+                    rec[name] = value.isoformat()[:10]
+                elif isinstance(value, Decimal):
+                    rec[name] = float(value)
+                else:
+                    rec[name] = value
+            out_rows.append(rec)
+        return out_rows
+
+    blocks = {d.name.removeprefix("panorama_"): rows(d.sql) for d in PANORAMA_DATASETS}
+    target = out / "panorama.json"
+    target.write_text(
+        json.dumps(blocks, ensure_ascii=False, indent=1), encoding="utf-8"
+    )
+    log.info("panorama.json: %s blocks, %d bytes", len(blocks), target.stat().st_size)
+    return {
+        "file": "panorama.json",
+        "bytes": target.stat().st_size,
+        "blocuri": {k: len(v) for k, v in blocks.items()},
+    }
+
 
 
 def build(out_dir: Path | None = None, *, only: str | None = None) -> dict[str, object]:
@@ -910,14 +946,20 @@ def build(out_dir: Path | None = None, *, only: str | None = None) -> dict[str, 
             ),
         }
 
-    # The front door's precomputed files, built from what was just written. Stale entries
-    # are dropped first: a prices-only run merges into an existing manifest and would
-    # otherwise list each of them twice.
+    # The front door, rebuilt from what was just written. Also drops the Parquet entries
+    # an earlier version of this wrote, so a bundle upgraded in place does not keep
+    # advertising two files that are no longer produced.
     pan_names = {d.name for d in PANORAMA_DATASETS}
     manifest["datasets"] = [
         d for d in manifest.get("datasets", []) if d["name"] not in pan_names
     ]
-    manifest["datasets"] += _panorama(con, out)
+    pan = _panorama(con, out)
+    if pan:
+        manifest["panorama"] = pan
+    else:
+        manifest.pop("panorama", None)
+    for stale in pan_names:
+        (out / f"{stale}.parquet").unlink(missing_ok=True)
 
     # Coverage and the exclusion count, so a reader can see what was left out. The
     # `ad` view only exists when the bulk archive was registered; in prices-only mode

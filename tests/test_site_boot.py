@@ -42,8 +42,13 @@ def test_select_tab_refuses_to_run_before_the_engine_is_up(source: str) -> None:
     The signal dropdown also calls `selectTab` and is not a button, so without this guard
     changing it mid-boot still wipes the loading message.
     """
-    guard = source.split("function selectTab(")[1][:400]
-    assert "if (!ready) return;" in guard, "selectTab must no-op before the engine is ready"
+    guard = source.split("function selectTab(")[1][:600]
+    # The front door is a deliberate exception: its rows arrive as JSON, so it can be
+    # drawn while DuckDB-Wasm is still downloading. Everything else is a query and still
+    # has to wait.
+    assert "if (!ready && !(key === 'panorama' && panoramaData)) return;" in guard, (
+        "selectTab must no-op before the engine is ready, except for the front door"
+    )
 
 
 def test_the_boot_state_is_visually_distinct(source: str) -> None:

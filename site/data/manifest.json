@@ -15,7 +15,7 @@
       "name": "cpv_an",
       "file": "cpv_an.parquet",
       "rows": 79541,
-      "bytes": 1922870,
+      "bytes": 1941082,
       "description": "Per CPV code and year: how many acquisitions and what they typically cost. Percentiles are null below n=5."
     },
     {
@@ -36,50 +36,36 @@
       "name": "autoritati_an",
       "file": "autoritati_an.parquet",
       "rows": 155521,
-      "bytes": 3474164,
+      "bytes": 3464257,
       "description": "Per contracting authority and year: volume and spend."
     },
     {
       "name": "furnizori_an",
       "file": "furnizori_an.parquet",
       "rows": 710398,
-      "bytes": 14812290,
+      "bytes": 14857865,
       "description": "Per supplier and year: volume, revenue and how many buyers."
     },
     {
       "name": "preturi_unitare",
       "file": "preturi_unitare.parquet",
       "rows": 22355,
-      "bytes": 434127,
+      "bytes": 434369,
       "description": "Median unit price per product group. A group is CPV + product key + unit + pack size; percentiles are null below n=5. Never compare across units or pack sizes."
     },
     {
       "name": "preturi_produs",
       "file": "preturi_produs.parquet",
       "rows": 21718,
-      "bytes": 422393,
+      "bytes": 423360,
       "description": "The same product across CPV codes: grouped on description, unit and pack size while the code is allowed to vary. `coduri` says how many CPV codes contributed, so a wide spread is visible rather than hidden."
     },
     {
       "name": "preturi_judet",
       "file": "preturi_judet.parquet",
       "rows": 24636,
-      "bytes": 452034,
+      "bytes": 451858,
       "description": "The same groups broken down by county, for comparing what different buyers paid for the same thing. Suppressed below n=5 per county."
-    },
-    {
-      "name": "panorama_cumparatori",
-      "file": "panorama_cumparatori.parquet",
-      "rows": 6,
-      "bytes": 1095,
-      "description": "The six largest buyers, precomputed for the front door so it does not aggregate a 3.3 MB table in the browser to show six rows."
-    },
-    {
-      "name": "panorama_preturi",
-      "file": "panorama_preturi.parquet",
-      "rows": 6,
-      "bytes": 2058,
-      "description": "The six widest unit-price spreads, precomputed for the front door. Carries cpv, pack size and the date window because the row opens a drill-down."
     }
   ],
   "indicatori": [
@@ -310,6 +296,14 @@
     "pana_la": "2026-09-09",
     "cu_concluzii_publicate": 97,
     "nota": "Registrul întâlnirilor dintre decidenți și terți. O întâlnire este legală, iar registrul există tocmai pentru a o face vizibilă — prezența aici nu spune nimic despre vreun contract."
+  },
+  "panorama": {
+    "file": "panorama.json",
+    "bytes": 2575,
+    "blocuri": {
+      "cumparatori": 6,
+      "preturi": 6
+    }
   },
   "acoperire": {
     "achizitii_directe_randuri": 26672753,
