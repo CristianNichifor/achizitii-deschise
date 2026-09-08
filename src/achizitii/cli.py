@@ -10,6 +10,8 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from . import config
+
 # SEAP publication and finalization dates are Romanian local time. Deriving "yesterday"
 # from UTC would select the wrong day for runs scheduled near midnight.
 RO_TZ = ZoneInfo("Europe/Bucharest")
@@ -120,6 +122,10 @@ def main(argv: list[str] | None = None) -> int:
         help="output directory (default: site/data)",
     )
     pub.add_argument(
+        "--r2", action="store_true",
+        help="consolidate to monthly files and upload to Cloudflare R2 (needs R2_* env)",
+    )
+    pub.add_argument(
         "--only", choices=["preturi"], default=None,
         help=(
             "rebuild only this section and merge into the existing manifest. "
@@ -215,6 +221,16 @@ def main(argv: list[str] | None = None) -> int:
         from .publish import build
 
         manifest = build(args.out, only=args.only)
+        if args.r2:
+            from pathlib import Path as _P
+
+            from .r2 import consolidate_months, upload
+            base = _P(args.out) if args.out else _P(config.ROOT) / "site" / "data"
+            monthly = consolidate_months(args.out)
+            # The manifest goes up with the data so a reader always sees a description
+            # that matches what is actually in the bucket.
+            manifest["r2"] = upload(monthly + [base / "manifest.json"], base)
+            manifest["r2"]["luni"] = len(monthly)
         _emit(manifest)
         return 0
 
