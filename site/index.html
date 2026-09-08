@@ -197,6 +197,27 @@
   th.sortable { cursor:pointer; user-select:none; }
   th.sortable:hover, th.sortable:focus-visible { color:var(--accent); }
   th.sorted { color:var(--accent); }
+  /* The front door. Each block is a doorway into a view that already exists: a lede that
+     says what the block is for, a handful of real rows, and a way in. */
+  .pan { margin:0 0 1.6rem; }
+  .pan > h2 { font-size:1.05rem; margin:0 0 .2rem; letter-spacing:-.01em; }
+  .pan > .lede { color:var(--muted); font-size:.88rem; margin:0 0 .6rem; }
+  .pan > .catre { margin:.5rem 0 0; font-size:.85rem; }
+  .pan > .catre button { cursor:pointer; color:var(--accent); background:none; border:none;
+                         padding:0; font-weight:600; font-size:inherit; }
+  /* What rests on what. The header says 26,7 million acquisitions; the unit prices — the
+     only thing here nobody else publishes — rest on seven days. A reader could not tell
+     which figure stood on which, and that is a correctness problem, not a polish one. */
+  .acoperire { display:grid; gap:.5rem; grid-template-columns:repeat(auto-fit,minmax(13rem,1fr));
+               margin:.4rem 0 0; }
+  .acoperire div { background:var(--sub); border:1px solid var(--line); border-radius:8px;
+                   padding:.6rem .75rem; }
+  .acoperire dt { font-size:.72rem; text-transform:uppercase; letter-spacing:.04em;
+                  color:var(--muted); margin:0; }
+  .acoperire dd { margin:.15rem 0 0; font-weight:600; }
+  .acoperire dd small { display:block; font-weight:400; color:var(--muted);
+                        font-size:.76rem; margin-top:.15rem; }
+
   /* One meeting, one card. The date leads because the register is chronological; the
      person leads the card because that is what a reader is looking for. */
   .meet { border:1px solid var(--line); border-radius:8px; padding:.7rem .85rem;
@@ -393,6 +414,7 @@
   <!-- The entity file replaces the single results table rather than sitting beside it:
        one organisation cannot be answered with one table, because identity, purchases,
        sales and signals have four different sets of columns. -->
+  <div id="panorama"></div>
   <div id="dosar-cap" hidden></div>
   <div id="dosar"></div>
   <!-- Drawn from the rows already in the table below, so the two cannot disagree. -->
@@ -484,6 +506,7 @@ const LABELS = {
   valoare_estimata_ron: 'valoare estimată (RON)', pct_din_estimare: '% din estimare',
   numar_oferte: 'nr. oferte', tip_procedura: 'procedură',
   pret_unitar_ron: 'preț unitar (RON)', motiv_necomparabil: 'motiv excludere',
+  de_cate_ori: 'de câte ori mai mare',
 };
 const label = (c) => LABELS[c] || c.replace(/_/g, ' ');
 
@@ -555,6 +578,20 @@ const ENTITY_GROUP = 'entitati';
 // Every view names the columns it selects rather than using *, so a schema change
 // upstream surfaces as an error here instead of silently reshaping the page.
 const VIEWS = {
+  // The front door.
+  //
+  // The site opened on a 41-row table of year x category. It answered a question nobody
+  // arrives with, and told a first-time visitor neither what this holds nor what to do
+  // with it — every other tab was a search box waiting for a term they had no reason to
+  // guess. This view is three doorways and an honest statement of what the data covers.
+  //
+  // Everything on it is a link into a view that already existed. It adds no new claim.
+  panorama: {
+    label: 'Panoramă',
+    search: null,
+    note: '',
+    // Rendered by runPanorama(), not by one query — see there.
+  },
   sumar: {
     label: 'Sumar',
     search: null,
@@ -961,7 +998,7 @@ function candidatesSql(term) {
   return `
     SELECT cui,
            max(denumire)  AS denumire,
-           sum(n)         AS n,
+           sum(n)::BIGINT AS n,
            round(sum(valoare)) AS valoare_totala_ron
     FROM (${parts.join('\n      UNION ALL\n      ')})
     WHERE cui IS NOT NULL AND cui <> ''
@@ -999,7 +1036,7 @@ function matcher(term) {
   };
 }
 
-let manifest = null, conn = null, current = 'sumar', indicator = null;
+let manifest = null, conn = null, current = 'panorama', indicator = null;
 
 // ---------------------------------------------------------------------------
 // Order and paging.
@@ -1271,10 +1308,15 @@ function chartFor(spec, table, maxRows = Infinity) {
 // dates decoded from epoch milliseconds, a year not given thousands separators, the
 // header carried into each cell for the phone layout — has to hold in all of them. Two
 // copies of this would drift within a week.
-function fillTable(el, table, { onRow = null, maxRows = Infinity, sortable = false } = {}) {
+function fillTable(el, table, {
+  onRow = null, maxRows = Infinity, sortable = false, hide = [],
+} = {}) {
   const head = el.tHead, body = el.tBodies[0];
   head.innerHTML = ''; body.innerHTML = '';
-  const cols = table.schema.fields.map((f) => f.name);
+  // `hide` drops columns from the RENDERING, never from the query. The front door's
+  // price rows carry cpv, pack size and the date window because opening the right group
+  // needs all four — and showing a reader a pack size to explain a price does not.
+  const cols = table.schema.fields.map((f) => f.name).filter((c) => !hide.includes(c));
   // Sums are the point of this page, and "3.854.469.918" is not a number anyone reads —
   // you have to count the dots to find out whether it is millions or billions, which is
   // exactly the comparison the table exists to make. Abbreviated above a million; the
@@ -1339,7 +1381,11 @@ function fillTable(el, table, { onRow = null, maxRows = Infinity, sortable = fal
       // is what names the value; on desktop it costs an unused attribute.
       td.dataset.label = label(c);
       if (v === null || v === undefined) td.classList.add('empty');
-      const numeric = typeof v === 'bigint' || typeof v === 'number';
+      // A DuckDB sum() over BIGINT is HUGEINT, and Arrow hands INT128 back as something
+      // that is neither a number nor a bigint. Without the third test those values print
+      // raw — "17267" in a column where every other row reads "17.267".
+      const wholeNumberText = typeof v === 'string' && /^-?\d{1,30}$/.test(v);
+      const numeric = typeof v === 'bigint' || typeof v === 'number' || wholeNumberText;
       // A year is a number but not a quantity: grouping separators turn 2026 into
       // "2.026" under ro-RO. Same for anything that is an identifier rather than a count.
       const isLabel = c === 'an' || c.endsWith('_cui') || c === 'cpv' || c === 'cui';
@@ -1350,7 +1396,7 @@ function fillTable(el, table, { onRow = null, maxRows = Infinity, sortable = fal
         : dates.has(c) ? new Date(Number(v)).toISOString().slice(0, 10)
         : numeric && !isLabel && money(c) ? ron(v)
         : numeric && !isLabel ? Number(v).toLocaleString('ro-RO') : String(v);
-      if (typeof v === 'number' || typeof v === 'bigint') td.className = 'num';
+      if (numeric) td.className = 'num';
       if (numeric && !isLabel && money(c) && v !== null && v !== undefined) {
         td.classList.add('money');
         // The exact figure is never destroyed, only folded away.
@@ -1359,6 +1405,214 @@ function fillTable(el, table, { onRow = null, maxRows = Infinity, sortable = fal
     }
   }
   return Math.min(table.numRows, maxRows);
+}
+
+// The front door.
+//
+// Three doorways and a coverage statement. Every figure here is a link into a view that
+// already existed; nothing on this screen makes a claim the rest of the site does not
+// already make, and no row is computed differently from the tab it leads to.
+//
+// The order is deliberate. Unit prices come first because they are the only thing here
+// nobody else publishes; signals second because they are what a visitor expects from a
+// procurement site and the place a wrong impression is easiest to give; coverage last
+// because it qualifies everything above it and has to be read after, not skipped before.
+async function runPanorama() {
+  const host = $('panorama');
+  host.textContent = '';
+
+  // Started together, awaited together. A failed query is one doorway fewer, never a
+  // broken page, so each catches its own.
+  const nMin = manifest.min_group_for_median || 5;
+  const cereri = Promise.all([
+    !manifest.preturi_unitare ? null : conn.query(`
+      SELECT denumire_key, um, n,
+             -- Immediately after the count, not last: it is the number this block is
+             -- about, and at the end of seven columns it was the one cut off the right
+             -- edge on a 1100px screen.
+             round(p90_ron / nullif(p10_ron, 0), 1) AS de_cate_ori,
+             p10_ron, mediana_ron, p90_ron,
+             cpv, marime_pachet, din, pana_la
+      FROM read_parquet(${lit(url('preturi_unitare.parquet'))})
+      WHERE n >= ${nMin} AND p10_ron > 0
+      ORDER BY de_cate_ori DESC NULLS LAST
+      LIMIT 6`).catch(() => null),
+    conn.query(`
+      SELECT autoritate_cui, any_value(autoritate) AS autoritate,
+             sum(n)::BIGINT AS n, round(sum(valoare_totala_ron)) AS valoare_totala_ron
+      FROM read_parquet(${lit(url('autoritati_an.parquet'))})
+      WHERE autoritate_cui IS NOT NULL AND autoritate_cui <> ''
+      GROUP BY autoritate_cui
+      ORDER BY valoare_totala_ron DESC NULLS LAST
+      LIMIT 6`).catch(() => null),
+  ]);
+  const [preturi, cumparatori] = await cereri;
+
+  const bloc = (titlu, lede) => {
+    const sec = document.createElement('section');
+    sec.className = 'pan';
+    const h = document.createElement('h2'); h.textContent = titlu;
+    const p = document.createElement('p'); p.className = 'lede'; p.textContent = lede;
+    sec.append(h, p);
+    host.append(sec);
+    return sec;
+  };
+  const catre = (sec, eticheta, go) => {
+    const p = document.createElement('p');
+    p.className = 'catre';
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = eticheta;
+    b.onclick = go;
+    p.append(b);
+    sec.append(p);
+  };
+  const tabel = (sec, table, opts) => {
+    const w = document.createElement('div');
+    w.className = 'wrap';
+    const t = document.createElement('table');
+    t.className = 'tbl';
+    t.append(document.createElement('thead'), document.createElement('tbody'));
+    w.append(t);
+    sec.append(w);
+    fillTable(t, table, opts);
+  };
+
+  // ---- 1. unit prices -------------------------------------------------------
+  //
+  // Ordered by the spread between the 10th and 90th percentile, which is the question
+  // this dataset exists to answer: how differently are two institutions charged for the
+  // same thing, in the same unit.
+  //
+  // A wide spread is NOT evidence of anything. Scope, quantity, delivery and timing all
+  // differ, and the lede says so — this is the one block where the page is most likely
+  // to be misread as an accusation.
+  if (manifest.preturi_unitare) {
+    const p = manifest.preturi_unitare;
+    const sec = bloc(
+      'Cât plătesc alții pentru același lucru',
+      'Preț pe unitate de măsură — singurul lucru de aici pe care nu îl publică nimeni '
+      + 'altcineva. Mai jos, grupurile cu cea mai mare distanță între prețul mic și cel '
+      + 'mare. O diferență mare nu înseamnă că cineva a greșit: cantitatea, condițiile '
+      + 'și momentul livrării diferă.',
+    );
+    if (preturi && preturi.numRows) {
+      // The drill-down columns are selected but not shown: a reader does not need the
+      // pack size to read the row, and the row needs it to open the right group.
+      tabel(sec, preturi, {
+        hide: ['cpv', 'marime_pachet', 'din', 'pana_la'],
+        onRow: (row) => ({
+          title: 'Vezi achizițiile din spatele acestei mediane',
+          open: () => {
+            drill = {
+              cpv: row.cpv, denumire_key: row.denumire_key, um: row.um,
+              marime_pachet: row.marime_pachet === null ? null : Number(row.marime_pachet),
+              din: row.din, pana_la: row.pana_la,
+            };
+            selectTab('detaliu');
+          },
+        }),
+      });
+    }
+    catre(sec, `Toate cele ${Number(p.randuri).toLocaleString('ro-RO')} de linii de preț →`,
+          () => selectTab('preturi'));
+  }
+
+  // ---- 2. signals -----------------------------------------------------------
+  //
+  // Counts come from the manifest, which already carries them — eight COUNT(*) queries
+  // to fill a summary screen would be the most expensive thing on the fastest page.
+  const semnale = manifest.indicatori || [];
+  if (semnale.length) {
+    const sec = bloc(
+      `Ce merită verificat — ${semnale.length} semnale`,
+      'Fiecare semnal are un temei legal citat și înseamnă „merită o privire”, niciodată '
+      + '„este ilegal”. Multe au explicații perfect legale.',
+    );
+    const ul = document.createElement('ul');
+    ul.className = 'legend';
+    ul.style.flexDirection = 'column';
+    ul.style.gap = '.3rem';
+    for (const ind of semnale) {
+      const li = document.createElement('li');
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.style.cssText = 'cursor:pointer;color:var(--accent);background:none;border:none;'
+                      + 'padding:0;font:inherit;text-align:left';
+      b.textContent = `${ind.nume || ind.id} — ${Number(ind.rows || 0).toLocaleString('ro-RO')}`;
+      b.onclick = () => selectTab('indicatori', ind);
+      li.append(b);
+      ul.append(li);
+    }
+    sec.append(ul);
+  }
+
+  // ---- 3. who buys ----------------------------------------------------------
+  const sec3 = bloc(
+    'Cine cheltuie cel mai mult',
+    'Instituțiile cu cea mai mare valoare de achiziții directe. A cheltui mult nu este '
+    + 'un indiciu în sine — spitalele și regiile mari cumpără mult.',
+  );
+  if (cumparatori && cumparatori.numRows) {
+    tabel(sec3, cumparatori, {
+      onRow: (row) => ({
+        title: 'Deschide fișa acestei instituții',
+        open: () => {
+          $('q').value = String(row.autoritate_cui);
+          selectTab('dosar');
+        },
+      }),
+    });
+  }
+  catre(sec3, 'Caută orice instituție sau firmă →', () => {
+    selectTab('dosar');
+    $('q').focus();
+  });
+
+  // ---- 4. what the data actually covers -------------------------------------
+  //
+  // Last, and not optional. The header says 26,7 million acquisitions, which is true of
+  // the bulk exports; the unit prices rest on seven days. Nothing on the page said which
+  // figure stood on which, and a reader who assumes the price archive is as deep as the
+  // header is being misled by omission.
+  const sec4 = bloc('Ce acoperă datele',
+    'Două surse foarte diferite ca adâncime. Merită știut care este care înainte de a '
+    + 'trage o concluzie.');
+  const dl = document.createElement('dl');
+  dl.className = 'acoperire';
+  const ac = manifest.acoperire || {};
+  const ani = ac.ani || [];
+  const nf = (v) => Number(v || 0).toLocaleString('ro-RO');
+  const camp = (eticheta, valoare, sub) => {
+    const d = document.createElement('div');
+    const dt = document.createElement('dt'); dt.textContent = eticheta;
+    const dd = document.createElement('dd'); dd.textContent = valoare;
+    if (sub) {
+      const sm = document.createElement('small'); sm.textContent = sub;
+      dd.append(sm);
+    }
+    d.append(dt, dd);
+    dl.append(d);
+  };
+  camp('Achiziții directe', nf(ac.achizitii_directe_randuri),
+       `${ani[0] ?? ''}–${ani[ani.length - 1] ?? ''}, din exporturile publice ANAP/ADR.`);
+  if (manifest.preturi_unitare) {
+    const p = manifest.preturi_unitare;
+    camp('Prețuri unitare', `${nf(p.randuri)} linii`,
+         `${numeral(p.zile_arhivate || 0, 'zi colectată', 'zile colectate')}, `
+         + `${p.din} → ${p.pana_la}. Nu pot fi reconstituite retroactiv: exporturile `
+         + 'în masă nu conțin cantități, deci arhiva crește doar înainte.');
+  }
+  if (manifest.ruti) {
+    const rt = manifest.ruti;
+    camp('Întâlniri (RUTI)', nf(rt.intalniri),
+         `${rt.din} → ${rt.pana_la}. Registrul public al întâlnirilor decidenților, `
+         + `din care ${nf(rt.cu_concluzii_publicate)} cu concluzii publicate. Nu este `
+         + 'legat de datele de achiziții.');
+  }
+  sec4.append(dl);
+
+  status('');
 }
 
 // Fill the facet dropdown from the data, once, and keep whatever is selected.
@@ -1986,7 +2240,7 @@ async function runDosar() {
 // becoming a stranded first entry, and after Back it keeps the reader moving backwards.
 function goDefault() {
   replaceOnly = true;
-  try { selectTab('sumar'); } finally { replaceOnly = false; }
+  try { selectTab('panorama'); } finally { replaceOnly = false; }
 }
 
 async function run() {
@@ -1996,6 +2250,17 @@ async function run() {
   syncUrl();
   $('run').disabled = true;
   status('Se interoghează…');
+  if (current === 'panorama') {
+    try {
+      await runPanorama();
+    } catch (err) {
+      status(`Eroare: ${err.message}`);
+      console.error(err);
+    } finally {
+      $('run').disabled = false;
+    }
+    return;
+  }
   if (current === 'dosar') {
     try {
       await runDosar();
@@ -2039,10 +2304,14 @@ function selectTab(key, ind) {
   // The entity file replaces the results table rather than appearing under it; leaving
   // the previous view's 200 rows below a company profile would read as part of it.
   const isDosar = key === 'dosar';
+  const isPan = key === 'panorama';
   const isFeed = !!(VIEWS[key] && VIEWS[key].feed);
-  // The table, the feed and the entity file are three alternatives for the same slot.
-  $('wrap-out').hidden = isDosar || isFeed;
+  // The table, the feed, the entity file and the front door are four alternatives for
+  // the same slot; never two at once.
+  $('wrap-out').hidden = isDosar || isFeed || isPan;
   if (!isFeed) $('flux').textContent = '';
+  if (!isPan) $('panorama').textContent = '';
+  if (isPan) { $('grafic').textContent = ''; $('pager').hidden = true; }
   // The file draws its charts inside its own sections and never calls render(), which is
   // what clears this. Without the line, moving from the summary to a company's file
   // leaves the summary's chart stranded above it, captioned as national spending and
@@ -2077,7 +2346,9 @@ function selectTab(key, ind) {
     // Names the tab the reader will actually land on. "Autorități" stopped being a tab
     // when the four entity views were grouped; sending someone to look for it would be
     // worse than saying nothing.
-    : 'Acest tabel nu se filtrează după text; o căutare vă duce la Entități.';
+    // "Acest tabel" was wrong on the front door, which has no table, and on the
+    // meetings register, which has a feed.
+    : 'Această pagină nu se filtrează după text; o căutare vă duce la Entități.';
   $('subnav').hidden = key !== 'indicatori';
   // The grouped views share one tab, so the selector shows for any of them and keeps
   // itself in step when a view is reached some other way — the hero search falls back to

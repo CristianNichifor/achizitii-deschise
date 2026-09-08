@@ -57,7 +57,9 @@ def test_the_register_is_a_feed_not_a_table(source: str) -> None:
 
 def test_the_table_and_the_feed_are_alternatives(source: str) -> None:
     """Both visible would be the same 666 meetings twice, one of them unreadable."""
-    assert "$('wrap-out').hidden = isDosar || isFeed;" in source
+    # Four alternatives share this slot now — table, feed, entity file, front door — and
+    # never two at once.
+    assert "$('wrap-out').hidden = isDosar || isFeed || isPan;" in source
     assert "if (!isFeed) $('flux').textContent = '';" in source
 
 
