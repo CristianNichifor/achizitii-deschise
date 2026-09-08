@@ -88,6 +88,9 @@
   #inapoi button { cursor:pointer; color:var(--accent); background:none; border:none;
                    padding:0; font-weight:600; }
   tbody tr:last-child td { border-bottom:none; }
+  .share { margin:.8rem 0 0; display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; }
+  .share button { cursor:pointer; font-size:.82rem; padding:.3rem .6rem; color:var(--accent); }
+  #copiat { color:var(--muted); font-size:.8rem; }
   details { margin-top:1.5rem; }
   summary { cursor:pointer; color:var(--muted); font-size:.85rem; }
   pre { background:var(--sub); padding:.9rem; border-radius:8px; overflow-x:auto;
@@ -230,6 +233,14 @@
   <p id="note"></p>
   <div class="wrap"><table id="out"><thead></thead><tbody></tbody></table></div>
 
+  <!-- The address bar now carries the whole view, but it changes silently and nobody
+       watches it. Saying so is the difference between a feature and an implementation
+       detail. -->
+  <p class="share">
+    <button type="button" id="copiaza">Copiază linkul acestei vizualizări</button>
+    <span id="copiat" role="status"></span>
+  </p>
+
   <details>
     <summary>Interogarea SQL folosită</summary>
     <pre id="sql"></pre>
@@ -304,6 +315,15 @@ const label = (c) => LABELS[c] || c.replace(/_/g, ' ');
 // Which price group the drill-down is showing, or null.
 let drill = null;
 
+// A day, from whatever the source happened to hand over. Arrow gives dates back as epoch
+// milliseconds; the manifest and the URL carry them as "YYYY-MM-DD". Both reach the same
+// comparisons, so both are normalised in one place.
+const dayOf = (v) => {
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'string') return v.slice(0, 10);
+  return new Date(Number(v)).toISOString().slice(0, 10);
+};
+
 // The archive files a group can possibly appear in.
 //
 // The browser cannot glob: DuckDB-Wasm reads Parquet over HTTP range requests, and a
@@ -319,12 +339,7 @@ function archiveFiles(din, pana) {
   const a = manifest.preturi_arhiva;
   if (!a || !a.fisiere) return [];
   const base = new URL(`${a.baza}/`, new URL('data/', location.href)).href;
-  const day = (v) => {
-    if (v === null || v === undefined) return null;
-    if (typeof v === 'string') return v.slice(0, 10);
-    return new Date(Number(v)).toISOString().slice(0, 10);
-  };
-  const from = day(din), to = day(pana);
+  const from = dayOf(din), to = dayOf(pana);
   return a.fisiere
     .filter((f) => {
       const m = f.match(/(\d{4}-\d{2}-\d{2})\.parquet$/);
@@ -886,8 +901,141 @@ async function entityContext(term) {
   } catch { return ''; }
 }
 
+// ---------------------------------------------------------------------------
+// Shareable state.
+//
+// The whole site had ONE address. Every tab, every search, every drill-down looked
+// identical to the address bar, so a finding could not be linked to — "look at what
+// this supplier charges" meant a screenshot, and browser Back left the site instead of
+// returning to the previous view. For a page whose stated purpose is letting other
+// people check the figures, an uncitable finding is barely published.
+//
+// The state lives in the HASH, not the query string. This is served as static files from
+// GitHub Pages: a path or a query the server has never heard of returns 404, while
+// everything after "#" never leaves the browser. It also means an old link degrades to
+// the summary rather than to an error.
+const URL_KEYS = ['v', 's', 'q', 'an', 'minn', 'baza', 'cpv', 'p', 'um', 'mp', 'din', 'pana'];
+
+// Set while a hash is being read back, so applying a link does not immediately rewrite it.
+let applying = false;
+// A tab change, a drill-down or a search is a place you can go Back from. Nudging the
+// year or the group size is not — otherwise Back becomes an undo button for typing and
+// it takes a dozen presses to leave the page.
+let pushNext = false;
+// Set while recovering from a link that named something this build cannot show. The URL
+// still has to be corrected — a reader who copies it would otherwise pass on the broken
+// address — but correcting it must not add a history entry, or Back lands on the same
+// dead link and bounces straight back.
+let replaceOnly = false;
+
+function currentState() {
+  const s = { v: current };
+  const f = filters();
+  const uses = controlsFor(current);
+  if (current === 'indicatori' && indicator) s.s = indicator.id;
+  // Only where the view actually searches. The summary keeps whatever is in the box so a
+  // reader can move to a view that uses it, but putting it in the link would publish a
+  // parameter that does nothing.
+  const searchable = current !== 'indicatori' && VIEWS[current] && VIEWS[current].search;
+  if (f.q && searchable) s.q = f.q;
+  if (uses.an && f.an) s.an = f.an;
+  if (uses.minn && f.minn > 1) s.minn = String(f.minn);
+  if ($('baza').value && VIEWS[current] && VIEWS[current].money) s.baza = $('baza').value;
+  if (current === 'detaliu' && drill) {
+    // A group is identified by all four parts, and any of them may legitimately be null —
+    // "no unit of measure" is a real group, not a missing value. Absent key means null;
+    // present-and-empty means the empty string. URLSearchParams keeps the two apart.
+    if (drill.cpv !== null && drill.cpv !== undefined) s.cpv = String(drill.cpv);
+    if (drill.denumire_key !== null && drill.denumire_key !== undefined) s.p = String(drill.denumire_key);
+    if (drill.um !== null && drill.um !== undefined) s.um = String(drill.um);
+    if (drill.marime_pachet !== null && drill.marime_pachet !== undefined) s.mp = String(drill.marime_pachet);
+    // Without the window the drill-down would open every file in the archive, which grows
+    // by one a day forever. Carried in the link so a shared one costs what the click did.
+    if (dayOf(drill.din)) s.din = dayOf(drill.din);
+    if (dayOf(drill.pana_la)) s.pana = dayOf(drill.pana_la);
+  }
+  return s;
+}
+
+// The history entry needs a name, or a reader's Back menu is twenty identical lines.
+function titleFor() {
+  const v = VIEWS[current];
+  const where = current === 'indicatori'
+    ? ((indicator && indicator.nume) || 'Semnale')
+    : v && v.group === ENTITY_GROUP ? (v.aspect || v.label)
+    : v ? v.label : '';
+  const term = $('q').value.trim();
+  return [where, term].filter(Boolean).join(' · ')
+       + ' — Achiziții publice din România';
+}
+
+function syncUrl() {
+  const push = pushNext && !replaceOnly;
+  pushNext = false;
+  // Above the `applying` guard on purpose. Opening a shared link is exactly when the tab
+  // and the history entry most need a name, and it is the one path that writes no hash.
+  document.title = titleFor();
+  if (applying) return;
+  const s = currentState();
+  const p = new URLSearchParams();
+  for (const k of URL_KEYS) if (k in s) p.set(k, s[k]);
+  const hash = '#' + p.toString();
+  if (hash === location.hash) return;   // never two identical entries in the history
+  history[push ? 'pushState' : 'replaceState'](null, '', hash);
+}
+
+// Returns false when there is nothing usable in the hash, so the caller can fall back to
+// the default view. A link naming a view that no longer exists — or a dataset this build
+// does not publish — must land somewhere sensible rather than on an empty table.
+function applyHash() {
+  const p = new URLSearchParams(location.hash.replace(/^#/, ''));
+  const key = p.get('v');
+  if (!key) return false;
+  if (key !== 'indicatori' && !VIEWS[key]) return false;
+  const ind = key === 'indicatori'
+    ? (manifest.indicatori || []).find((i) => i.id === p.get('s'))
+    : null;
+  if (key === 'indicatori' && !ind) return false;
+
+  applying = true;
+  try {
+    $('q').value = p.get('q') || '';
+    // An unknown year is dropped rather than forced: assigning a value that is not among
+    // the options leaves the select empty, which is exactly "— toți —".
+    $('an').value = p.get('an') || '';
+    $('baza').value = p.get('baza') || '';
+    $('minn').value = p.get('minn') || '1';
+    drill = key !== 'detaliu' ? null : {
+      cpv: p.has('cpv') ? p.get('cpv') : null,
+      denumire_key: p.has('p') ? p.get('p') : null,
+      um: p.has('um') ? p.get('um') : null,
+      // A number here, not a string: the drill-down SQL emits a bare literal for numbers
+      // and a quoted one for text, and '6' would never match 6.
+      marime_pachet: p.has('mp') ? Number(p.get('mp')) : null,
+      din: p.get('din'), pana_la: p.get('pana'),
+    };
+    if (key === 'detaliu' && !drill.denumire_key && !drill.cpv) return false;
+    selectTab(key, ind);
+  } finally {
+    applying = false;
+  }
+  return true;
+}
+
+// Where the page lands when a link says nothing usable — on a cold boot with no hash, or
+// after Back reaches an entry naming a view this build does not publish. It corrects the
+// address bar without adding a history entry: on boot that keeps the bare URL from
+// becoming a stranded first entry, and after Back it keeps the reader moving backwards.
+function goDefault() {
+  replaceOnly = true;
+  try { selectTab('sumar'); } finally { replaceOnly = false; }
+}
+
 async function run() {
   if (!conn) return;
+  // Synchronously, before the first await: `applying` is still set while a link is being
+  // read back, and that is what stops reading a hash from immediately rewriting it.
+  syncUrl();
   $('run').disabled = true;
   status('Se interoghează…');
   if (current === 'entitate') await resolveEntity($('q').value.trim());
@@ -913,6 +1061,8 @@ function selectTab(key, ind) {
   // this, and it is not a button. Without the guard, changing it mid-boot would wipe the
   // loading message.
   if (!ready) return;
+  // Changing what you are looking at is a navigation; changing how it is filtered is not.
+  pushNext = true;
   current = key;
   indicator = ind || null;
   $('inapoi').style.display = key === 'detaliu' ? 'block' : 'none';
@@ -1094,7 +1244,9 @@ function selectTab(key, ind) {
     ready = true;
     $('run').disabled = false;
     for (const b of $('tabs').children) b.disabled = false;
-    selectTab('sumar');
+    // A link decides what opens; the summary is only the fallback. Nothing before this
+    // point could honour a hash — there was no engine to query with.
+    if (!applyHash()) goDefault();
   } catch (err) {
     status(`Eroare la inițializare: ${err.message}. Servește folderul prin HTTP (nu file://).`);
     console.error(err);
@@ -1112,6 +1264,8 @@ function heroSearch() {
     selectTab(SEARCHABLE_FALLBACK);
     $('q').value = term;
   }
+  // Searching is somewhere you can come back from, the same as changing tab.
+  pushNext = true;
   run();
 }
 
@@ -1126,6 +1280,33 @@ $('run').addEventListener('click', heroSearch);
 $('q').addEventListener('keydown', (e) => { if (e.key === 'Enter') heroSearch(); });
 $('an').addEventListener('change', run);
 $('baza').addEventListener('change', run);
+// This control had no listener at all. Typing a group size did nothing until the reader
+// happened to press Caută, so on every view without a search box — the summary, contracts
+// — it looked simply broken.
+$('minn').addEventListener('change', run);
+
+// Back and Forward move between views rather than off the site. Guarded on `ready`
+// because a hash can be navigated before the engine exists, and selectTab would refuse
+// anyway; this way the link is not silently swallowed either.
+// navigator.clipboard needs a secure context. The published site is HTTPS, but someone
+// serving the folder over plain HTTP to look at it locally would otherwise press this and
+// get nothing at all — so a failure says where the link is instead of failing silently.
+$('copiaza').addEventListener('click', async () => {
+  const link = location.href;
+  try {
+    await navigator.clipboard.writeText(link);
+    $('copiat').textContent = 'Copiat.';
+  } catch {
+    $('copiat').textContent = 'Copiați-l din bara de adrese.';
+  }
+  setTimeout(() => { $('copiat').textContent = ''; }, 4000);
+});
+
+window.addEventListener('popstate', () => {
+  if (!ready) return;
+  if (applyHash()) return;
+  goDefault();
+});
 </script>
 </body>
 </html>
