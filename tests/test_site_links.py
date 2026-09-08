@@ -136,7 +136,7 @@ def test_the_drill_down_group_survives_a_reload(source: str) -> None:
 def test_the_drill_down_link_carries_its_date_window(source: str) -> None:
     """Without it the shared link opens every file in an archive that grows by one a day
     forever, so the link would get slower every day it existed."""
-    body = _body(source, "function currentState() {")
+    body = _body(source, "function currentState() {", 2800)
     assert "s.din = dayOf(drill.din)" in body
     assert "s.pana = dayOf(drill.pana_la)" in body
 
