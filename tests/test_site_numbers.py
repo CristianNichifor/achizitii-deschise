@@ -76,3 +76,28 @@ def test_flex_children_can_shrink(source: str, selector: str) -> None:
     assert "min-width:0" in block.replace(" ", ""), (
         f"{selector} must be allowed to shrink, or narrow screens scroll horizontally"
     )
+
+
+def test_the_methodology_note_is_not_styled_as_a_warning(source: str) -> None:
+    """Amber is for warnings; this line is on every tab.
+
+    `#note` carries the per-view methodology text — "a group is CPV + product + unit",
+    "spending is not itself an indication". Rendering all of it in the warning colour
+    means a genuine warning has no way left to stand out. The standing caveat above the
+    tabs keeps amber, because it is one.
+    """
+    rule = source.split("#note {")[1].split("}")[0]
+    assert "var(--warn)" not in rule, "the per-tab note must not use the warning colour"
+    assert "var(--muted)" in rule
+
+
+def test_money_below_the_cutoff_has_a_fixed_number_of_decimals(source: str) -> None:
+    """Decimal points have to line up in a column meant for comparison.
+
+    The default gave whatever each value happened to carry, so a median column read
+    2.800 / 831,6 / 32.984,17 — three shapes, three decimal positions.
+    """
+    body = source.split("function ron(")[1][:700]
+    assert "return fixed(n, 2);" in body, (
+        "sub-million money must be formatted to a fixed 2 decimals, not left to the default"
+    )
