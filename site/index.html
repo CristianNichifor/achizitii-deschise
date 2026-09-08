@@ -88,6 +88,30 @@
   #inapoi button { cursor:pointer; color:var(--accent); background:none; border:none;
                    padding:0; font-weight:600; }
   tbody tr:last-child td { border-bottom:none; }
+  /* The entity file. One organisation, every table that mentions it, in the order a
+     reader actually asks: who is this, what does it buy, what does it sell, what has
+     been flagged. Each section keeps its own table rather than being forced into one
+     shape, because the four sources genuinely have different columns. */
+  #dosar-cap { margin:.4rem 0 1rem; }
+  #dosar-cap h2 { font-size:1.15rem; margin:0 0 .2rem; letter-spacing:-.01em; }
+  #dosar-cap .cui { font-family:var(--mono); color:var(--muted); font-size:.85rem; }
+  /* Three numbers, side by side, before any table. The point of the file is that you
+     can see at a glance whether an organisation buys, sells, or both. */
+  .fapte { display:flex; gap:.5rem; flex-wrap:wrap; margin:.7rem 0 0; }
+  .fapte div { flex:1 1 9rem; background:var(--sub); border:1px solid var(--line);
+               border-radius:8px; padding:.55rem .7rem; }
+  .fapte dt { font-size:.7rem; text-transform:uppercase; letter-spacing:.04em;
+              color:var(--muted); margin:0; }
+  .fapte dd { margin:.15rem 0 0; font-size:1.05rem; font-weight:600;
+              font-variant-numeric:tabular-nums; }
+  .fapte dd small { font-weight:400; color:var(--muted); font-size:.75rem; display:block;
+                    font-variant-numeric:normal; }
+  .sect { margin:1.4rem 0 0; }
+  .sect > h3 { font-size:.8rem; text-transform:uppercase; letter-spacing:.05em;
+               color:var(--muted); margin:0 0 .45rem; font-weight:600; }
+  /* An empty section is an ANSWER — "this company never sells to the state" is worth
+     knowing — so it says so rather than disappearing. */
+  .sect .gol { color:var(--muted); font-size:.85rem; margin:0; }
   .share { margin:.8rem 0 0; display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; }
   .share button { cursor:pointer; font-size:.82rem; padding:.3rem .6rem; color:var(--accent); }
   #copiat { color:var(--muted); font-size:.8rem; }
@@ -148,25 +172,30 @@
        1816px wide in a 390px viewport; "Semnale" 1 of 9. The one visible column was the
        CPV code — the reader could see an identifier and none of the figures.
        Each row becomes a card instead, every field on its own line with its header
-       beside it. Taller, entirely readable, no sideways scrolling. */
+       beside it. Taller, entirely readable, no sideways scrolling.
+
+       These rules used to be written against #out, the single results table. The entity
+       file renders SEVERAL tables, so they are keyed on the class every data table
+       carries instead — otherwise the file's sections would each be a 1816px table
+       again, which is the fault this block exists to fix. */
     .wrap { border:0; border-radius:0; overflow-x:visible; }
-    #out thead { display:none; }         /* the header moves into each cell */
-    #out, #out tbody, #out tr, #out td { display:block; width:100%; }
-    #out tr { border:1px solid var(--line); border-radius:8px; margin:0 0 .6rem;
+    .tbl thead { display:none; }         /* the header moves into each cell */
+    .tbl, .tbl tbody, .tbl tr, .tbl td { display:block; width:100%; }
+    .tbl tr { border:1px solid var(--line); border-radius:8px; margin:0 0 .6rem;
               padding:.35rem .1rem; background:var(--paper); }
-    #out td { display:flex; gap:1rem; justify-content:space-between; align-items:baseline;
+    .tbl td { display:flex; gap:1rem; justify-content:space-between; align-items:baseline;
               white-space:normal; border:0; padding:.3rem .75rem; text-align:right; }
-    #out td::before {
+    .tbl td::before {
       content:attr(data-label);
       flex:0 0 auto; max-width:52%; text-align:left;
       color:var(--muted); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em;
     }
     /* A cell with nothing to say is noise on a card, where it costs a whole line. */
-    #out td.empty { display:none; }
-    #out tr:last-child td { border-bottom:0; }
+    .tbl td.empty { display:none; }
+    .tbl tr:last-child td { border-bottom:0; }
     /* Skeleton rows have no labels; keep them as plain bars while loading. */
-    #out tr.skeleton td { display:block; text-align:left; }
-    #out tr.skeleton td::before { content:none; }
+    .tbl tr.skeleton td { display:block; text-align:left; }
+    .tbl tr.skeleton td::before { content:none; }
     .controls select, .controls input { width:100%; }
     h1 { font-size:1.35rem; }
   }
@@ -231,7 +260,12 @@
   <p id="inapoi"><button type="button">← Înapoi la prețuri unitare</button></p>
   <p id="status" class="boot">Se pregătește…</p>
   <p id="note"></p>
-  <div class="wrap"><table id="out"><thead></thead><tbody></tbody></table></div>
+  <!-- The entity file replaces the single results table rather than sitting beside it:
+       one organisation cannot be answered with one table, because identity, purchases,
+       sales and signals have four different sets of columns. -->
+  <div id="dosar-cap" hidden></div>
+  <div id="dosar"></div>
+  <div class="wrap" id="wrap-out"><table id="out" class="tbl"><thead></thead><tbody></tbody></table></div>
 
   <!-- The address bar now carries the whole view, but it changes silently and nobody
        watches it. Saying so is the difference between a feature and an implementation
@@ -301,7 +335,7 @@ const LABELS = {
   data_inregistrare: 'înregistrată la', inactiv: 'inactivă fiscal',
   data_inactivare: 'inactivă din', data_reactivare: 'reactivată la',
   data_radiere: 'radiată la', platitor_tva: 'plătitor TVA',
-  denumire: 'denumire', stare: 'stare', stare_de_la: 'stare din',
+  denumire: 'denumire', stare: 'stare', stare_de_la: 'stare din', cui: 'CUI',
   data_achizitie: 'data achiziției', zile_dupa: 'zile după', valoare_ron: 'valoare (RON)',
   data_intalnirii: 'data întâlnirii', decident: 'decident', functie: 'funcție',
   institutie: 'instituție', titlu: 'titlu', locul_intalnirii: 'loc', concluzii: 'concluzii',
@@ -451,6 +485,26 @@ const VIEWS = {
       WHERE n >= ${f.minn} ${f.an ? `AND an = ${f.an}` : ''}
       ORDER BY an DESC, valoare_totala_ron DESC NULLS LAST`,
   },
+  // One organisation, everything we hold about it, on one screen — the pattern
+  // harta-firmelor.ro uses for its company file, and the thing this page most obviously
+  // lacked. The four aspects below answer the same question from four places, and a
+  // reader had to guess which to open before knowing what any of them contained; the
+  // page even had to grow a "your search matches something over there" hint to cover for
+  // it. Asking all four at once removes the guess.
+  //
+  // First in this object on purpose: the aspect selector is built in declaration order,
+  // so this is what the Entități tab opens, and it is where the hero search now lands.
+  dosar: {
+    label: 'Fișă entitate',
+    group: ENTITY_GROUP,
+    aspect: 'Fișă completă — tot ce știm despre o entitate',
+    search: 'instituție sau firmă — denumire ori CUI',
+    note: 'Toate sursele despre o singură entitate: registrul ANAF, ce cumpără, ce vinde ' +
+          'și ce s-a marcat. O secțiune goală este tot un răspuns. Sumele sunt nominale — ' +
+          'ajustarea la inflație se aplică tabelelor pe an, nu fișei.',
+    // No `sql`: this view runs several queries, and controlsFor() reads the absence
+    // correctly — it honours neither the year nor the group size, so neither is offered.
+  },
   autoritati: {
     label: 'Autorități',
     group: ENTITY_GROUP,
@@ -545,16 +599,9 @@ const VIEWS = {
       ORDER BY denumire
       LIMIT 200`,
   },
-  entitate: {
-    label: 'Fișă entitate',
-    group: ENTITY_GROUP,
-    aspect: 'Semnale — ce s-a marcat despre o entitate',
-    search: 'instituție SAU firmă — denumire ori CUI',
-    note: 'Toate semnalele care menționează o entitate — ca autoritate contractantă ' +
-          'SAU ca furnizor — într-un singur loc. Un semnal înseamnă „merită ' +
-          'verificat”, niciodată „este ilegal”.',
-    sql: (f) => entitySql(f),
-  },
+  // The old `entitate` aspect ran exactly the query the file's Semnale section runs, and
+  // nothing else. Keeping both would offer "Fișă completă" and a strict subset of it in
+  // the same selector, which is the confusion this change exists to remove.
   ruti: {
     label: 'Întâlniri (RUTI)',
     search: 'decident, instituție sau subiect',
@@ -664,6 +711,132 @@ function entitySql(f) {
     LIMIT 200`;
 }
 
+// ---------------------------------------------------------------------------
+// The entity file: one organisation, every table that mentions it.
+//
+// Order is the order a reader asks: who is this, what does it buy, what does it sell,
+// what has been flagged. Each section keeps its own columns — identity, purchases, sales
+// and signals genuinely differ, and flattening them into one table would mean a row of
+// mostly-empty cells whichever shape won.
+const DOSAR = [
+  {
+    id: 'identitate',
+    titlu: 'Identitate (ANAF)',
+    gol: 'Nu apare în registrul ANAF publicat aici. Instituțiile publice adesea nu apar — ' +
+         'registrul acoperă firmele.',
+    need: () => !!manifest.furnizori_profil,
+    sql: (m) => `
+      SELECT cui, denumire, judet, data_inregistrare, inactiv,
+             data_inactivare, data_reactivare, data_radiere, platitor_tva
+      FROM read_parquet(${lit(url('furnizori_profil.parquet'))})
+      WHERE ${m('cui', 'denumire')}
+      LIMIT 5`,
+  },
+  {
+    id: 'cumparator',
+    titlu: 'Ca autoritate contractantă — ce cumpără',
+    gol: 'Nu apare ca autoritate contractantă în datele publicate.',
+    sql: (m) => `
+      SELECT an, autoritate, autoritate_cui, n,
+             round(valoare_totala_ron) AS valoare_totala_ron, furnizori_distincti
+      FROM read_parquet(${lit(url('autoritati_an.parquet'))})
+      WHERE ${m('autoritate_cui', 'autoritate')}
+      ORDER BY an DESC
+      LIMIT 200`,
+  },
+  {
+    id: 'furnizor',
+    titlu: 'Ca furnizor — ce vinde statului',
+    gol: 'Nu apare ca furnizor în datele publicate.',
+    sql: (m) => `
+      SELECT an, furnizor, furnizor_cui, n,
+             round(valoare_totala_ron) AS valoare_totala_ron, autoritati_distincte
+      FROM read_parquet(${lit(url('furnizori_an.parquet'))})
+      WHERE ${m('furnizor_cui', 'furnizor')}
+      ORDER BY an DESC
+      LIMIT 200`,
+  },
+  {
+    id: 'semnale',
+    titlu: 'Semnale',
+    gol: 'Niciun semnal. Absența unui semnal nu este o atestare.',
+    need: () => (manifest.indicatori || []).length > 0,
+    // The union across every findings table, unchanged — this is the query the old
+    // "Fișă entitate" aspect ran on its own, now one section of four.
+    sql: (m, term) => entitySql({ q: term }),
+  },
+];
+
+// Which organisations a NAME could mean.
+//
+// Without this the file lied. Searching "romsilva" matched 5 ANAF records and 200 rows
+// of contracting authorities — Regia Națională plus every Direcție Silvică that carries
+// the word — and the file put one name at the top and summed 563 million lei underneath
+// it, as though a single body had spent it. A page that exists to let people check
+// figures cannot merge separate legal entities into one heading.
+//
+// So a name is first resolved to a list of distinct fiscal codes. One match opens the
+// file; several ask which. A fiscal code skips this entirely — it already identifies
+// exactly one organisation.
+function candidatesSql(term) {
+  const like = lit('%' + term + '%');
+  const parts = [
+    `SELECT autoritate_cui AS cui, autoritate AS denumire,
+            n, valoare_totala_ron AS valoare
+     FROM read_parquet(${lit(url('autoritati_an.parquet'))})
+     WHERE autoritate ILIKE ${like}`,
+    `SELECT furnizor_cui, furnizor, n, valoare_totala_ron
+     FROM read_parquet(${lit(url('furnizori_an.parquet'))})
+     WHERE furnizor ILIKE ${like}`,
+  ];
+  // A company that has never traded with the state is still an answer — it exists, and
+  // saying so beats "no results". Counted as zero rather than left out.
+  if (manifest.furnizori_profil) {
+    parts.push(`SELECT cui, denumire, 0, 0
+     FROM read_parquet(${lit(url('furnizori_profil.parquet'))})
+     WHERE denumire ILIKE ${like}`);
+  }
+  return `
+    SELECT cui,
+           max(denumire)  AS denumire,
+           sum(n)         AS n,
+           round(sum(valoare)) AS valoare_totala_ron
+    FROM (${parts.join('\n      UNION ALL\n      ')})
+    WHERE cui IS NOT NULL AND cui <> ''
+    GROUP BY cui
+    ORDER BY valoare_totala_ron DESC NULLS LAST
+    LIMIT 50`;
+}
+
+// How a term is matched against a table, given what that table happens to carry.
+//
+// A CUI is matched EXACTLY. Everywhere else on this page a fiscal code is matched with
+// ILIKE '%...%', which is fine for filtering a ranked list but wrong here: searching
+// 4340536 would also pull in 14340536, and a file that claims to be about one
+// organisation must not quietly merge two.
+//
+// A name is matched loosely, and also against the ANAF name resolved from the code —
+// ANAF writes "DEDEMAN SRL" where SEAP writes "DEDEMAN S.R.L.", so three of the findings
+// tables, which identify a supplier by name alone, are unreachable from a fiscal code
+// without it.
+function matcher(term) {
+  const digits = term.replace(/^ro\s*/i, '').trim();
+  const isCui = /^[0-9]{2,10}$/.test(digits);
+  const like = lit('%' + term + '%');
+  const nameLike = resolvedName ? lit('%' + resolvedName + '%') : null;
+  return (cuiCol, nameCol) => {
+    const parts = [];
+    if (isCui) {
+      if (cuiCol) parts.push(`${cuiCol} = ${lit(digits)}`);
+      if (nameCol && nameLike) parts.push(`${nameCol} ILIKE ${nameLike}`);
+    } else if (nameCol) {
+      parts.push(`${nameCol} ILIKE ${like}`);
+    }
+    // A table with nothing to match on must return nothing, not everything.
+    return parts.length ? parts.join(' OR ') : 'false';
+  };
+}
+
 let manifest = null, conn = null, current = 'sumar', indicator = null;
 
 function filters() {
@@ -747,20 +920,14 @@ function buildSql() {
   return deflate(VIEWS[current].sql(filters()), VIEWS[current]);
 }
 
-function render(table) {
-  const head = $('out').tHead, body = $('out').tBodies[0];
+// One Arrow table into one HTML table. Split out of render() because the entity file
+// draws four of these, and every rule about how a value is shown — money abbreviated,
+// dates decoded from epoch milliseconds, a year not given thousands separators, the
+// header carried into each cell for the phone layout — has to hold in all of them. Two
+// copies of this would drift within a week.
+function fillTable(el, table, { onRow = null } = {}) {
+  const head = el.tHead, body = el.tBodies[0];
   head.innerHTML = ''; body.innerHTML = '';
-  if (!table.numRows) {
-    status(current === 'entitate' && !$('q').value.trim()
-      ? 'Scrieți denumirea sau CUI-ul unei instituții ori firme.'
-      : 'Niciun rezultat. Relaxați filtrele.');
-    // "No results" is the wrong answer when the name is simply on the other side of the
-    // transaction. Searching DEDEMAN — a supplier — lands on the buyers view and reports
-    // nothing, which reads as "not in the data" rather than "wrong aspect". Grouping the
-    // four views behind one tab hides that mistake unless the page also points across it.
-    if (VIEWS[current] && VIEWS[current].group === ENTITY_GROUP) suggestOtherAspect();
-    return;
-  }
   const cols = table.schema.fields.map((f) => f.name);
   // Sums are the point of this page, and "3.854.469.918" is not a number anyone reads —
   // you have to count the dots to find out whether it is millions or billions, which is
@@ -768,8 +935,8 @@ function render(table) {
   // exact figure stays one hover away, and is still what gets copied out of the SQL box.
   const money = (c) => c.endsWith('_ron');
   // Arrow hands back Date32/Date64 as epoch milliseconds, which are numbers as far as
-  // JS is concerned — so a date column rendered "2026-09-04" as "1.788.480.000.000"
-  // under ro-RO grouping. The schema knows the difference; column names do not.
+  // JS is concerned — so a date column rendered "2026-09-04" as "1.788.480.000.000".
+  // The schema knows the difference; column names do not.
   const dates = new Set(
     table.schema.fields.filter((f) => /Date|Timestamp/.test(f.type.toString())).map((f) => f.name),
   );
@@ -777,24 +944,18 @@ function render(table) {
     const th = document.createElement('th'); th.textContent = label(c);
     th.title = c; return th;
   }));
-  const drillable = current === 'preturi';
   for (const row of table.toArray()) {
     const tr = body.insertRow();
-    if (drillable) {
+    // A row is clickable when the caller says what clicking it does — a price group
+    // opens its acquisitions, a search result opens that organisation's file.
+    const act = onRow ? onRow(row) : null;
+    if (act) {
       tr.className = 'drillable';
       tr.tabIndex = 0;
-      tr.title = 'Vezi achizițiile din spatele acestei mediane';
-      const open = () => {
-        drill = {
-          cpv: row.cpv, denumire_key: row.denumire_key, um: row.um,
-          marime_pachet: row.marime_pachet === null ? null : Number(row.marime_pachet),
-          din: row.din, pana_la: row.pana_la,
-        };
-        selectTab('detaliu');
-      };
-      tr.onclick = open;
+      tr.title = act.title;
+      tr.onclick = act.open;
       // Keyboard parity: a row that only responds to a mouse is not a control.
-      tr.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } };
+      tr.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); act.open(); } };
     }
     for (const c of cols) {
       const td = tr.insertCell();
@@ -806,7 +967,7 @@ function render(table) {
       const numeric = typeof v === 'bigint' || typeof v === 'number';
       // A year is a number but not a quantity: grouping separators turn 2026 into
       // "2.026" under ro-RO. Same for anything that is an identifier rather than a count.
-      const isLabel = c === 'an' || c.endsWith('_cui') || c === 'cpv';
+      const isLabel = c === 'an' || c.endsWith('_cui') || c === 'cpv' || c === 'cui';
       td.textContent = v === null || v === undefined ? '—'
         // "true" in an otherwise Romanian table. Affects `comparabil` here and `anulat`
         // in the meetings register.
@@ -822,6 +983,34 @@ function render(table) {
       }
     }
   }
+  return table.numRows;
+}
+
+function render(table) {
+  const head = $('out').tHead, body = $('out').tBodies[0];
+  head.innerHTML = ''; body.innerHTML = '';
+  if (!table.numRows) {
+    status('Niciun rezultat. Relaxați filtrele.');
+    // "No results" is the wrong answer when the name is simply on the other side of the
+    // transaction. Searching DEDEMAN — a supplier — lands on the buyers view and reports
+    // nothing, which reads as "not in the data" rather than "wrong aspect". Grouping the
+    // four views behind one tab hides that mistake unless the page also points across it.
+    if (VIEWS[current] && VIEWS[current].group === ENTITY_GROUP) suggestOtherAspect();
+    return;
+  }
+  fillTable($('out'), table, {
+    onRow: current !== 'preturi' ? null : (row) => ({
+      title: 'Vezi achizițiile din spatele acestei mediane',
+      open: () => {
+        drill = {
+          cpv: row.cpv, denumire_key: row.denumire_key, um: row.um,
+          marime_pachet: row.marime_pachet === null ? null : Number(row.marime_pachet),
+          din: row.din, pana_la: row.pana_la,
+        };
+        selectTab('detaliu');
+      },
+    }),
+  });
   // Same agreement rule as everywhere else: this line has been saying "1 rânduri".
   status(`${randuri(table.numRows)}${table.numRows === 200 ? ' (limitat la 200)' : ''}.`);
 }
@@ -848,12 +1037,19 @@ const ASPECT_PROBES = {
 // Romanian needs the noun agreed with the number, and inserts "de" above twenty:
 // 1 rând, 2 rânduri, 20 DE rânduri, 101 rânduri, 120 DE rânduri. The rule is the last two
 // digits: 0 or 20-99 takes "de". Getting this wrong reads as a machine wrote the page.
-function randuri(n) {
-  if (n === 1) return '1 rând';
+function numeral(n, unu, multe) {
+  if (n === 1) return `1 ${unu}`;
   const last = n % 100;
   const de = last === 0 || last >= 20 ? 'de ' : '';
-  return `${n.toLocaleString('ro-RO')} ${de}rânduri`;
+  return `${n.toLocaleString('ro-RO')} ${de}${multe}`;
 }
+
+function randuri(n) { return numeral(n, 'rând', 'rânduri'); }
+
+// The chooser counts ORGANISATIONS, not rows. "„romsilva” se potrivește cu 39 de rânduri"
+// invites the reader to think of them as records to scroll rather than as 39 separate
+// legal entities they have to pick between, which is the whole point of the screen.
+function organizatii(n) { return numeral(n, 'organizație', 'organizații'); }
 
 async function suggestOtherAspect() {
   const term = $('q').value.trim();
@@ -884,22 +1080,11 @@ async function suggestOtherAspect() {
        + ' — schimbați selectorul de mai sus.');
 }
 
-async function entityContext(term) {
-  if (!term) return '';
-  try {
-    const r = await conn.query(`
-      SELECT sum(n) AS achizitii, sum(valoare_totala_ron) AS valoare,
-             min(an) AS din, max(an) AS pana
-      FROM read_parquet(${lit(url('autoritati_an.parquet'))})
-      WHERE autoritate ILIKE ${lit('%' + term + '%')}
-         OR autoritate_cui ILIKE ${lit('%' + term + '%')}`);
-    const x = r.toArray()[0];
-    if (!x || !x.achizitii) return '';
-    const nf = (v) => Number(v).toLocaleString('ro-RO', { maximumFractionDigits: 0 });
-    return ` Pentru comparație, instituția are ${nf(x.achizitii)} achiziții directe`
-         + ` (${nf(x.valoare)} RON) între ${x.din} și ${x.pana}.`;
-  } catch { return ''; }
-}
+// entityContext() lived here: a sentence appended to the note giving an institution's
+// total acquisitions, so that a count of signals was never shown without a denominator.
+// The file states that as a figure instead — "A cumpărat 3,85 mld RON · 12.004 achiziții
+// directe" sits beside the signal count rather than in a paragraph under it, which is
+// the same guard against a bare count reading as a verdict.
 
 // ---------------------------------------------------------------------------
 // Shareable state.
@@ -1022,6 +1207,205 @@ function applyHash() {
   return true;
 }
 
+// Narrow a search term to ONE organisation, or draw the list to choose from.
+//
+// Returns the term to build the file with — a fiscal code where one was found, since
+// that matches exactly — or null when a chooser has been drawn instead and there is no
+// file to build yet.
+async function disambiguate(term) {
+  // Already a fiscal code: it names one organisation by definition.
+  if (/^[0-9]{2,10}$/.test(term.replace(/^ro\s*/i, '').trim())) return term;
+  let cands;
+  try {
+    cands = await conn.query(candidatesSql(term));
+  } catch {
+    // If the lookup fails the file is still worth drawing on the raw term; it is the
+    // narrowing that is missing, not the data.
+    return term;
+  }
+  const rows = cands.toArray();
+  if (rows.length <= 1) return rows.length === 1 ? String(rows[0].cui) : term;
+
+  const host = $('dosar');
+  const box = document.createElement('section');
+  box.className = 'sect';
+  const h3 = document.createElement('h3');
+  h3.textContent = `${organizatii(rows.length)}${rows.length === 50 ? ' sau mai multe' : ''}`
+    + ` se potrivesc cu „${term}” — alegeți organizația`;
+  box.append(h3);
+  const p = document.createElement('p');
+  p.className = 'gol';
+  p.textContent = 'Sunt entități juridice distincte. Însumarea lor sub un singur nume ar '
+    + 'atribui unei instituții cheltuiala altora.';
+  box.append(p);
+  const w = document.createElement('div');
+  w.className = 'wrap';
+  const tbl = document.createElement('table');
+  tbl.className = 'tbl';
+  tbl.append(document.createElement('thead'), document.createElement('tbody'));
+  w.append(tbl);
+  box.append(w);
+  host.append(box);
+  fillTable(tbl, cands, {
+    onRow: (row) => ({
+      title: 'Deschide fișa acestei organizații',
+      open: () => {
+        // The fiscal code becomes the search term, so the file that opens is exact and
+        // the link that results identifies one organisation rather than a word.
+        $('q').value = String(row.cui);
+        pushNext = true;
+        run();
+      },
+    }),
+  });
+  $('sql').textContent = `-- Organizații care se potrivesc cu „${term}”\n`
+    + candidatesSql(term).trim();
+  status(`„${term}” se potrivește cu ${organizatii(rows.length)}. Alegeți una.`);
+  return null;
+}
+
+// Draw the entity file. Every section is queried, including the ones that come back
+// empty, because "this company has never sold anything to the state" is an answer a
+// reader came for — a section that simply vanishes cannot be told apart from a section
+// that was never asked.
+async function runDosar() {
+  const term = $('q').value.trim();
+  const cap = $('dosar-cap'), host = $('dosar');
+  host.innerHTML = '';
+  cap.hidden = true;
+  if (!term) {
+    $('sql').textContent = '';
+    status('Scrieți denumirea sau CUI-ul unei instituții ori firme.');
+    return;
+  }
+  // A name may mean several organisations. Resolve it to one before claiming to be a
+  // file about one, or the heading names a body whose figures include other bodies.
+  const subject = await disambiguate(term);
+  if (subject === null) return;   // a chooser was drawn instead of a file
+
+  // Resolves a fiscal code to the ANAF name, which is what reaches the findings tables
+  // that identify a supplier by name alone.
+  await resolveEntity(subject);
+  const m = matcher(subject);
+  const secs = DOSAR.filter((s) => !s.need || s.need());
+  const sqls = secs.map((s) => s.sql(m, subject));
+  // Every query the file ran, in the panel below, in the order the sections appear.
+  $('sql').textContent = secs
+    .map((s, i) => `-- ${s.titlu}\n${sqls[i].trim()}`)
+    .join('\n\n');
+
+  // Concurrently. In sequence the file assembles a section at a time and the reader
+  // watches it arrive in stages; the wait is now the slowest single query.
+  const tables = await Promise.all(
+    // A section that fails must not take the file down with it — the others still answer.
+    sqls.map((q) => conn.query(q).catch(() => null)),
+  );
+  const by = {};
+  secs.forEach((s, i) => { by[s.id] = tables[i]; });
+
+  const rows = (t) => (t && t.numRows ? t.toArray() : []);
+  const first = (t, col) => (rows(t)[0] ? rows(t)[0][col] : null);
+  const total = (t, col) => rows(t).reduce((a, r) => a + Number(r[col] || 0), 0);
+  const nf = (v) => Number(v).toLocaleString('ro-RO');
+
+  // The heading names the organisation, not the search term. Searching a fiscal code and
+  // being shown that fiscal code back tells the reader nothing about whether they found
+  // the right body.
+  const nume = first(by.identitate, 'denumire')
+    || first(by.cumparator, 'autoritate')
+    || first(by.furnizor, 'furnizor')
+    || term;
+  const cui = first(by.identitate, 'cui')
+    || first(by.cumparator, 'autoritate_cui')
+    || first(by.furnizor, 'furnizor_cui')
+    || '';
+  const judet = first(by.identitate, 'judet') || '';
+  const found = secs.filter((s) => by[s.id] && by[s.id].numRows).length;
+
+  // Nothing matched anywhere. The sections below still say so one by one — that is four
+  // separate answers, and worth showing — but putting the typed text in an <h2> above a
+  // strip of zeros presents a misspelling as though it were an organisation.
+  if (!found) {
+    status(`Nimic despre „${term}” în niciuna dintre cele ${secs.length} surse.`);
+  } else {
+
+  cap.hidden = false;
+  cap.textContent = '';
+  const h = document.createElement('h2');
+  h.textContent = String(nume);
+  cap.append(h);
+  const ident = [cui ? `CUI ${cui}` : '', judet].filter(Boolean).join(' · ');
+  if (ident) {
+    const p = document.createElement('p');
+    p.className = 'cui';
+    p.textContent = ident;
+    cap.append(p);
+  }
+
+  // Three figures before any table, because the first question about an organisation is
+  // which side of the transaction it is on — and plenty are on both.
+  const dl = document.createElement('dl');
+  dl.className = 'fapte';
+  const fapt = (eticheta, valoare, sub) => {
+    const d = document.createElement('div');
+    const dt = document.createElement('dt'); dt.textContent = eticheta;
+    const dd = document.createElement('dd'); dd.textContent = valoare;
+    if (sub) {
+      const s = document.createElement('small');
+      s.textContent = sub;
+      dd.append(s);
+    }
+    d.append(dt, dd);
+    dl.append(d);
+  };
+  const cumparat = total(by.cumparator, 'valoare_totala_ron');
+  const vandut = total(by.furnizor, 'valoare_totala_ron');
+  fapt('A cumpărat', `${ron(cumparat)} RON`,
+       `${nf(total(by.cumparator, 'n'))} achiziții directe`);
+  fapt('A vândut', `${ron(vandut)} RON`,
+       `${nf(total(by.furnizor, 'n'))} achiziții directe`);
+  if (by.semnale !== undefined) {
+    // Never "suspiciuni". A signal means "worth checking", and the card says so where
+    // the number is, not three paragraphs away.
+    const nSem = by.semnale ? by.semnale.numRows : 0;
+    // 200 is the query's ceiling, not a count. Printing it bare would state a total the
+    // page does not know.
+    fapt('Semnale', nSem === 200 ? '200+' : nf(nSem), 'de verificat, nu de condamnat');
+  }
+  cap.append(dl);
+  status(`Fișă pentru „${nume}”: ${found} din ${secs.length} secțiuni au date.`);
+  }
+
+  for (const s of secs) {
+    const t = by[s.id];
+    const box = document.createElement('section');
+    box.className = 'sect';
+    const h3 = document.createElement('h3');
+    // Same rule as the facts strip: a section sitting on exactly 200 rows has been
+    // truncated, and saying "200 de rânduri" would present a ceiling as a total. The
+    // totals in the strip above are computed from these rows, so they are capped too.
+    h3.textContent = !t || !t.numRows ? s.titlu
+      : `${s.titlu} — ${randuri(t.numRows)}${t.numRows === 200 ? ' (limitat la 200)' : ''}`;
+    box.append(h3);
+    if (!t || !t.numRows) {
+      const p = document.createElement('p');
+      p.className = 'gol';
+      p.textContent = s.gol;
+      box.append(p);
+    } else {
+      const w = document.createElement('div');
+      w.className = 'wrap';
+      const tbl = document.createElement('table');
+      tbl.className = 'tbl';
+      tbl.append(document.createElement('thead'), document.createElement('tbody'));
+      w.append(tbl);
+      box.append(w);
+      fillTable(tbl, t);
+    }
+    host.append(box);
+  }
+}
+
 // Where the page lands when a link says nothing usable — on a cold boot with no hash, or
 // after Back reaches an entry naming a view this build does not publish. It corrects the
 // address bar without adding a history entry: on boot that keeps the bare URL from
@@ -1038,16 +1422,21 @@ async function run() {
   syncUrl();
   $('run').disabled = true;
   status('Se interoghează…');
-  if (current === 'entitate') await resolveEntity($('q').value.trim());
+  if (current === 'dosar') {
+    try {
+      await runDosar();
+    } catch (err) {
+      status(`Eroare: ${err.message}`);
+      console.error(err);
+    } finally {
+      $('run').disabled = false;
+    }
+    return;
+  }
   const sql = buildSql();
   $('sql').textContent = sql.trim();
   try {
     render(await conn.query(sql));
-    if (current === 'entitate') {
-      const named = resolvedName ? ` CUI ${$('q').value.trim()} = ${resolvedName}.` : '';
-      const extra = await entityContext(resolvedName || $('q').value.trim());
-      $('note').textContent = VIEWS.entitate.note + named + extra;
-    }
   } catch (err) {
     status(`Eroare: ${err.message}`);
     console.error(err);
@@ -1066,6 +1455,15 @@ function selectTab(key, ind) {
   current = key;
   indicator = ind || null;
   $('inapoi').style.display = key === 'detaliu' ? 'block' : 'none';
+  // The entity file replaces the results table rather than appearing under it; leaving
+  // the previous view's 200 rows below a company profile would read as part of it.
+  const isDosar = key === 'dosar';
+  $('wrap-out').hidden = isDosar;
+  if (!isDosar) {
+    $('dosar').textContent = '';
+    $('dosar-cap').textContent = '';
+    $('dosar-cap').hidden = true;
+  }
   // Leaving the drill-down forgets the group, so a later click cannot inherit a stale one.
   if (key !== 'detaliu') drill = null;
   for (const b of $('tabs').children) {
@@ -1256,7 +1654,11 @@ function selectTab(key, ind) {
 // The hero search is the first thing anyone touches. On a view that cannot be filtered
 // by text — the yearly summary is 41 rows of year x category — typing into it used to do
 // nothing at all. Jump to a view where the query means something instead.
-const SEARCHABLE_FALLBACK = 'autoritati';
+// The entity file, not the buyers list. Typing a company name and landing on a table of
+// contracting authorities was the single most confusing thing the page did — it is why
+// there is a "your search matches something over there" hint at all. A name or a fiscal
+// code now goes where every source is asked at once.
+const SEARCHABLE_FALLBACK = 'dosar';
 function heroSearch() {
   const term = $('q').value.trim();
   const usable = current !== 'indicatori' && VIEWS[current] && VIEWS[current].search;
