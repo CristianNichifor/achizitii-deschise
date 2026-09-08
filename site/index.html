@@ -901,6 +901,15 @@ function entitySql(f) {
   if (!term) return 'SELECT NULL AS semnal WHERE false';
   const like = lit('%' + term + '%');
   const nameLike = resolvedName ? lit('%' + resolvedName + '%') : null;
+  // A fiscal code is an identifier, so it is matched with `=`.
+  //
+  // It used to be ILIKE '%2816464%', which is wrong twice: it also matches 12816464, and
+  // a substring predicate lets a Parquet reader prune nothing — the findings files are
+  // sorted by autoritate_cui precisely so that a lookup can skip row groups, and this
+  // clause was the reason it never did.
+  const digits = term.replace(/^ro\s*/i, '').trim();
+  const isCui = /^[0-9]{2,10}$/.test(digits);
+  const cui = lit(digits);
   const parts = (manifest.indicatori || []).map((ind) => {
     const cols = ind.columns || [];
     const val = VALUE_COLS.find((c) => cols.includes(c));
@@ -914,11 +923,20 @@ function entitySql(f) {
              ${furnizor} AS furnizor,
              ${val ? `t.${val}` : 'NULL::DOUBLE'} AS valoare_ron
       FROM read_parquet(${lit(url(ind.file))}) t
-      WHERE t.autoritate ILIKE ${like} OR t.autoritate_cui ILIKE ${like}
-         ${cols.includes('furnizor') ? `OR t.furnizor ILIKE ${like}` : ''}
-         ${cols.includes('furnizor_cui') ? `OR t.furnizor_cui ILIKE ${like}` : ''}
-         ${nameLike && cols.includes('furnizor') ? `OR t.furnizor ILIKE ${nameLike}` : ''}
-         ${nameLike ? `OR t.autoritate ILIKE ${nameLike}` : ''}`;
+      WHERE ${isCui
+        // By code. The resolved name is still used, but ONLY for the supplier side of
+        // tables that carry no furnizor_cui — which is the whole reason it exists: three
+        // findings tables identify a supplier by name alone, so a search for a fiscal
+        // code found nothing in them. Every table has autoritate_cui, so the authority
+        // side never needs the name.
+        ? [`t.autoritate_cui = ${cui}`,
+           cols.includes('furnizor_cui') ? `t.furnizor_cui = ${cui}` : '',
+           (!cols.includes('furnizor_cui') && nameLike && cols.includes('furnizor'))
+             ? `t.furnizor ILIKE ${nameLike}` : ''].filter(Boolean).join(' OR ')
+        // By name. Matching a name against a code column found nothing and cost a scan.
+        : [`t.autoritate ILIKE ${like}`,
+           cols.includes('furnizor') ? `t.furnizor ILIKE ${like}` : ''
+          ].filter(Boolean).join(' OR ')}`;
   });
   if (!parts.length) return 'SELECT NULL AS semnal WHERE false';
   return `${parts.join('\n      UNION ALL\n')}
@@ -1044,8 +1062,23 @@ function matcher(term) {
   return (cuiCol, nameCol) => {
     const parts = [];
     if (isCui) {
+      // The code where there is one; the resolved name ONLY where there is not.
+      //
+      // This used to be an OR of both, which was wrong twice over. Correctness: every
+      // table reached through here carries a fiscal code, so adding `OR name ILIKE
+      // '%DEDEMAN%'` could only ever pull in a DIFFERENT company whose name happens to
+      // contain the same word — in a file whose whole premise is that it describes one
+      // organisation. Speed: an OR with an unindexed substring match forces a reader to
+      // scan every row group, which silently defeated sorting the files by fiscal code.
+      //
+      // MEASURED, and it was not hypothetical. DEDEMAN's file read 685,0 mil RON over 22
+      // rows. Of those, 672,1 mil across 11 rows is DEDEMAN S.R.L. (2816464); the rest is
+      // DEDEMAN AUTOMOBILE S.R.L. (15934070, 10,0 mil) and DEDEMAN URBAN S.R.L.
+      // (47910541, 0,7 mil) — two other companies, with two other fiscal codes, whose
+      // money was being attributed to a third. The same change also took the entity
+      // file's transfer from 24,66 MB to 5,41 MB, but that is the smaller half of it.
       if (cuiCol) parts.push(`${cuiCol} = ${lit(digits)}`);
-      if (nameCol && nameLike) parts.push(`${nameCol} ILIKE ${nameLike}`);
+      else if (nameCol && nameLike) parts.push(`${nameCol} ILIKE ${nameLike}`);
     } else if (nameCol) {
       parts.push(`${nameCol} ILIKE ${like}`);
     }
