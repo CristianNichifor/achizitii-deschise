@@ -92,6 +92,13 @@ jobs:
             if achizitii seap --start "$day" --end "$day"; then
               achizitii publish --only preturi
               git add site/data
+              # The authority cache rides along deliberately: it is only worth keeping
+              # if it survives the job, and the next dispatch starts warm because of it.
+              # Guarded because it does not exist until the first successful save, and
+              # `git add` on a missing path is fatal under `set -e`.
+              if [ -f data/autoritati.parquet ]; then
+                git add data/autoritati.parquet
+              fi
               if ! git diff --cached --quiet; then
                 git commit -q -m "data: unit prices for $day"
                 for attempt in 1 2 3; do
