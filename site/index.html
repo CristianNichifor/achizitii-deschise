@@ -13,11 +13,13 @@
   :root {
     --ink: #101418; --muted: #5c6672; --paper: #fff; --sub: #f4f6f8;
     --line: #dfe4e9; --accent: #123a6b; --accent-soft: #eef3fa; --warn: #b45309;
+    --on-accent: #fff;
     --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
   }
   @media (prefers-color-scheme: dark) {
     :root { --ink:#e8ecf1; --muted:#95a1af; --paper:#0e1216; --sub:#161c23;
-            --line:#252d36; --accent:#7ea9dd; --accent-soft:#16202c; --warn:#f0b429; }
+            --line:#252d36; --accent:#7ea9dd; --accent-soft:#16202c; --warn:#f0b429;
+            --on-accent:#0e1216; }
   }
   * { box-sizing: border-box; }
   body { margin:0; padding:2rem 1.25rem 4rem; background:var(--paper); color:var(--ink);
@@ -59,7 +61,8 @@
      edge of a 320px screen and the whole page scrolls sideways. */
   .hero input { flex:1; min-width:0; padding:.7rem .9rem; font-size:1rem; }
   .hero button { padding:.7rem 1.4rem; font-size:1rem; background:var(--accent);
-                 color:#fff; border-color:transparent; cursor:pointer; font-weight:600; }
+                 color:var(--on-accent); border-color:transparent; cursor:pointer;
+                 font-weight:600; }
   .hero button:disabled { opacity:.5; cursor:progress; }
   .hint { color:var(--muted); font-size:.82rem; margin:0 0 1.2rem; min-height:1em; }
   .subnav { display:flex; align-items:center; gap:.6rem; margin:-.4rem 0 1rem;
@@ -70,7 +73,8 @@
   .subnav select { max-width:100%; }
   .subnav label { margin:0; }
   .subnav #semnal-temei { color:var(--muted); font-size:.78rem; }
-  #run { background:var(--accent); color:#fff; border-color:transparent; cursor:pointer; font-weight:500; }
+  #run { background:var(--accent); color:var(--on-accent); border-color:transparent;
+         cursor:pointer; font-weight:500; }
   #run:disabled { opacity:.5; cursor:progress; }
   .tabs button[aria-selected="true"] { font-weight:600; }
   #status { color:var(--muted); font-size:.85rem; margin:.75rem 0; }
@@ -171,6 +175,10 @@
   .viz .legend { display:flex; flex-wrap:wrap; gap:.15rem .9rem; margin:.5rem 0 0;
                  padding:0; list-style:none; font-size:.75rem; color:var(--muted); }
   .viz .legend li { display:flex; align-items:center; gap:.35rem; }
+  /* WCAG 2.2 target size: the front door's signal list was a stack of buttons with
+     23.2px of safe clickable space. Padding rather than a taller line, so the text keeps
+     its rhythm. */
+  .pan .legend li button { padding:.3rem 0; min-height:1.5rem; }
   /* The swatch carries identity; the text stays in ink. A light categorical hue is
      illegible as label text on white. */
   .viz .legend i { width:.7rem; height:.7rem; border-radius:2px; flex:none; }
@@ -193,7 +201,7 @@
   .fapte dd { margin:.15rem 0 0; font-size:1.05rem; font-weight:600; }
   .fapte dd small { font-weight:400; color:var(--muted); font-size:.75rem; display:block; }
   .sect { margin:1.4rem 0 0; }
-  .sect > h3 { font-size:.8rem; text-transform:uppercase; letter-spacing:.05em;
+  .sect > h3, .sect > h2 { font-size:.8rem; text-transform:uppercase; letter-spacing:.05em;
                color:var(--muted); margin:0 0 .45rem; font-weight:600; }
   /* An empty section is an ANSWER — "this company never sells to the state" is worth
      knowing — so it says so rather than disappearing. */
@@ -239,8 +247,11 @@
   .meet dt { color:var(--muted); font-size:.72rem; text-transform:uppercase;
              letter-spacing:.04em; margin:.5rem 0 .1rem; }
   .meet dd { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; }
-  /* A cancelled entry still belongs in the register — that it was cancelled is the fact. */
-  .meet.anulata { opacity:.72; }
+  /* A cancelled entry still belongs in the register — that it was cancelled is the fact,
+     and the "anulată" badge is what says so. It used to ALSO dim the card, which took the
+     muted text from 5.84:1 to 3.19:1 and failed WCAG AA — for the sake of a signal the
+     badge was already carrying in words. The border does the visual work instead. */
+  .meet.anulata { border-color:var(--warn); }
   .meet .steag { grid-column:2; display:inline-block; align-self:start; justify-self:start;
                  font-size:.7rem; text-transform:uppercase; letter-spacing:.04em;
                  color:var(--warn); border:1px solid var(--warn); border-radius:4px;
@@ -1749,6 +1760,35 @@ async function runPanorama() {
   status('');
 }
 
+// A region that scrolls sideways has to be reachable from the keyboard.
+//
+// `.wrap` is `overflow-x:auto`, so a wide table scrolls — with a mouse. A keyboard user
+// could tab to every row and still never see the columns past the right edge, which on
+// the entity file is where the money is. `tabindex="0"` makes the region itself focusable
+// and therefore scrollable with the arrow keys.
+//
+// Applied only where the content actually overflows. Adding it unconditionally would put
+// a tab stop in front of every table on the page, including the ones that fit and the
+// phone layout, where `.wrap` does not scroll at all — degrading keyboard navigation
+// everywhere to fix it in one place.
+function makeScrollableRegionsFocusable(root = document) {
+  for (const w of root.querySelectorAll('.wrap')) {
+    const scrolls = w.scrollWidth > w.clientWidth + 1;
+    if (scrolls) {
+      w.tabIndex = 0;
+      w.setAttribute('role', 'region');
+      // Named from the table's own first header, so the announcement is not "region".
+      const first = w.querySelector('thead th');
+      w.setAttribute('aria-label',
+        first ? `Tabel, derulare laterală — ${first.textContent.trim()}` : 'Tabel, derulare laterală');
+    } else {
+      w.removeAttribute('tabindex');
+      w.removeAttribute('role');
+      w.removeAttribute('aria-label');
+    }
+  }
+}
+
 // Fill the facet dropdown from the data, once, and keep whatever is selected.
 //
 // The counts are part of the label because a list of 35 institution names sorted
@@ -2189,10 +2229,13 @@ async function disambiguate(term) {
   const host = $('dosar');
   const box = document.createElement('section');
   box.className = 'sect';
-  const h3 = document.createElement('h3');
-  h3.textContent = `${organizatii(rows.length)}${rows.length === 50 ? ' sau mai multe' : ''}`
+  // h2, not h3. The file's sections are h3 beneath the h2 in #dosar-cap — but when the
+  // chooser is drawn that heading does not exist, so an h3 here follows the page h1
+  // directly and skips a level.
+  const h2 = document.createElement('h2');
+  h2.textContent = `${organizatii(rows.length)}${rows.length === 50 ? ' sau mai multe' : ''}`
     + ` se potrivesc cu „${term}” — alegeți organizația`;
-  box.append(h3);
+  box.append(h2);
   const p = document.createElement('p');
   p.className = 'gol';
   p.textContent = 'Sunt entități juridice distincte. Însumarea lor sub un singur nume ar '
@@ -2391,6 +2434,7 @@ async function run() {
       status(`Eroare: ${err.message}`);
       console.error(err);
     } finally {
+      makeScrollableRegionsFocusable();
       $('run').disabled = false;
     }
     return;
@@ -2402,6 +2446,7 @@ async function run() {
       status(`Eroare: ${err.message}`);
       console.error(err);
     } finally {
+      makeScrollableRegionsFocusable();
       $('run').disabled = false;
     }
     return;
@@ -2414,6 +2459,7 @@ async function run() {
     status(`Eroare: ${err.message}`);
     console.error(err);
   } finally {
+    makeScrollableRegionsFocusable();
     $('run').disabled = false;
   }
 }
