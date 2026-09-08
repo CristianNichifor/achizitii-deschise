@@ -16,10 +16,13 @@ name: backfill unit prices
 #
 # COST
 #
-# At the deliberately modest 4 rps / 2 workers, a weekday of ~8,300 acquisitions takes
-# roughly 17 minutes; a weekend day takes seconds. Fifty weekdays is about 850 of the
-# 2,000 free minutes a month, so a quarter is affordable but not free — run it in
-# chunks and watch the budget rather than firing the whole gap at once.
+# At 1.5 rps — under SEAP's published ceiling of 500 requests per 5 minutes — a weekday
+# of ~8,300 acquisitions takes about 2 hours; a weekend day takes seconds. A 300-minute
+# budget therefore covers roughly two and a half weekdays per dispatch.
+#
+# Minutes are free on a public repo, so the cost is wall-clock, not money. Before
+# chaining many of these, read the rate note in config.MAX_RPS: SEAP also discourages
+# continuous automated processes over long periods, whatever the rate.
 #
 # RESUMABILITY
 #
