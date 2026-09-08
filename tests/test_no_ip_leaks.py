@@ -36,6 +36,15 @@ IPV4 = re.compile(rf"\b{OCTET}\.{OCTET}\.{OCTET}\.{OCTET}\b")
 SKIP_SUFFIXES = {".parquet", ".png", ".jpg", ".svg", ".ico", ".gz", ".zip", ".bundle"}
 SKIP_DIRS = ("site/data/", "data/")
 
+SELF = "tests/test_no_ip_leaks.py"
+"""This file, which must contain sample addresses in order to test the detector.
+
+The first version of this test scanned itself, and passed only because the file was not
+yet tracked when it was run — `git ls-files` did not list it. Committing it made the suite
+fail on the next run. A hole of exactly one file, whose contents are reviewed precisely
+because it is this file, is the smaller problem.
+"""
+
 ALLOWED: set[str] = set()
 """Addresses that may legitimately appear. Empty on purpose.
 
@@ -72,6 +81,7 @@ def _tracked_text_files() -> list[Path]:
         Path(p) for p in out
         if Path(p).suffix not in SKIP_SUFFIXES
         and not p.startswith(SKIP_DIRS)
+        and p != SELF
         and Path(p).is_file()
     ]
 
@@ -102,8 +112,11 @@ def test_no_public_ip_address_is_committed() -> None:
 @pytest.mark.parametrize(
     ("text", "public"),
     [
-        ("82.79.122.161", True),    # the one that leaked
-        ("8.8.8.8", True),
+        # Deliberately NOT the address that leaked. Writing the real one here would put
+        # it straight back into the public repository, inside the very file meant to keep
+        # it out — which is exactly what happened on the first version of this test.
+        ("8.8.8.8", True),          # a public resolver, not anybody's home connection
+        ("81.196.28.1", True),      # Romanian, public, arbitrary
         ("127.0.0.1", False),
         ("192.168.1.1", False),
         ("10.0.0.5", False),
