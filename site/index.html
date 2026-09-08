@@ -21,7 +21,17 @@
   h1 { font-size:1.6rem; margin:0 0 .3rem; letter-spacing:-.02em; }
   .sub { color:var(--muted); margin:0 0 1.5rem; }
   .banner { background:var(--sub); border-left:3px solid var(--warn); padding:.7rem .9rem;
-            border-radius:0 6px 6px 0; margin-bottom:1.25rem; font-size:.9rem; }
+            border-radius:0 6px 6px 0; margin:0 0 1.25rem; font-size:.9rem; }
+  /* The default triangle is dropped because the caveat should read as a statement, not a
+     widget — but something has to say it opens, or a collapsed banner is text that
+     silently swallows taps. The cue appears only while it is closed. */
+  .banner > summary { cursor:pointer; list-style:none; color:var(--ink); font-size:1em; }
+  .banner > summary::-webkit-details-marker { display:none; }
+  .banner:not([open]) > summary::after {
+    content:' Află mai mult ▾'; color:var(--accent); font-weight:600; font-size:.85em;
+    white-space:nowrap;
+  }
+  .banner > p { margin:.45rem 0 0; }
   .tabs { display:flex; gap:.35rem; flex-wrap:wrap; margin-bottom:1rem;
           border-bottom:1px solid var(--line); }
   .tabs button { background:none; color:var(--muted); border:none; border-bottom:2px solid transparent;
@@ -104,11 +114,14 @@
     .boot::before, .skeleton span { animation:none; }
   }
 
-  /* On a 390px phone the eleven tabs wrapped onto FOUR rows. Together with the hero and
-     the caveat that pushed the table entirely below the fold — you could not see a single
-     figure without scrolling, on a page whose whole purpose is the figures. One
-     swipeable row instead. The caveat above it stays put: it is the thing a reader most
-     needs before reading numbers, so it is not what gets collapsed to save space. */
+  /* On a 390px phone the eleven tabs wrapped onto FOUR rows, which together with the hero
+     and the caveat pushed the table entirely below the fold — not one figure visible
+     without scrolling, on a page whose whole purpose is the figures. One swipeable row
+     instead.
+     The caveat above it is now a <details>: its headline — the warning itself — is always
+     on screen, and only the elaboration beneath folds away here. An earlier version of
+     this comment said the caveat was never collapsed to save space; that is no longer
+     true, and the distinction that matters is warning versus explanation. */
   @media (max-width: 640px) {
     body { padding:1.25rem .9rem 3rem; }
     .tabs { flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none;
@@ -120,6 +133,37 @@
        pushes the whole page sideways — a flex item will not shrink below its content
        without it. */
     .controls > div { flex:1 1 8rem; min-width:0; }
+    /* Reclaimed from the top of the screen, measured: 568px sat above the first result.
+       The hint reserves a line even when it has nothing to say (min-height guards against
+       layout shift on desktop, where the space is free); and the second sentence of the
+       scale line describes the tool rather than the data. */
+    .hint:empty { min-height:0; margin:0; }
+    .sub .how { display:none; }
+
+    /* A table does not fit a phone, and pretending otherwise hid almost all of it.
+       Measured at 390px before this: "Prețuri unitare" showed 1 of 12 columns, its table
+       1816px wide in a 390px viewport; "Semnale" 1 of 9. The one visible column was the
+       CPV code — the reader could see an identifier and none of the figures.
+       Each row becomes a card instead, every field on its own line with its header
+       beside it. Taller, entirely readable, no sideways scrolling. */
+    .wrap { border:0; border-radius:0; overflow-x:visible; }
+    #out thead { display:none; }         /* the header moves into each cell */
+    #out, #out tbody, #out tr, #out td { display:block; width:100%; }
+    #out tr { border:1px solid var(--line); border-radius:8px; margin:0 0 .6rem;
+              padding:.35rem .1rem; background:var(--paper); }
+    #out td { display:flex; gap:1rem; justify-content:space-between; align-items:baseline;
+              white-space:normal; border:0; padding:.3rem .75rem; text-align:right; }
+    #out td::before {
+      content:attr(data-label);
+      flex:0 0 auto; max-width:52%; text-align:left;
+      color:var(--muted); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em;
+    }
+    /* A cell with nothing to say is noise on a card, where it costs a whole line. */
+    #out td.empty { display:none; }
+    #out tr:last-child td { border-bottom:0; }
+    /* Skeleton rows have no labels; keep them as plain bars while loading. */
+    #out tr.skeleton td { display:block; text-align:left; }
+    #out tr.skeleton td::before { content:none; }
     .controls select, .controls input { width:100%; }
     h1 { font-size:1.35rem; }
   }
@@ -137,13 +181,18 @@
   </form>
   <p class="hint" id="hint"></p>
 
-  <div class="banner">
-    <strong>Cifrele arată tipare, nu concluzii.</strong> Un total mare sau o poziție
-    dominantă a unui furnizor pot avea explicații perfect legale. Sumele sunt nominale,
-    fără ajustare la inflație, dacă nu alegeți un an de referință.
+  <!-- The warning itself is the summary and is ALWAYS visible; only the elaboration
+       folds, and only on a phone, where this block cost ~180px of a 844px screen and
+       pushed every figure below the fold. Open on desktop; the script closes it on narrow
+       screens. What collapses is explanation, never the caveat. -->
+  <details class="banner" id="banner" open>
+    <summary><strong>Cifrele arată tipare, nu concluzii.</strong></summary>
+    <p>Un total mare sau o poziție dominantă a unui furnizor pot avea explicații perfect
+    legale. Sumele sunt nominale, fără ajustare la inflație, dacă nu alegeți un an de
+    referință.
     Vezi <a href="https://github.com/CristianNichifor/achizitii-deschise/blob/main/METHODOLOGY.md">metodologia</a>
-    și <a href="https://github.com/CristianNichifor/achizitii-deschise/blob/main/CORRECTIONS.md">dreptul la replică</a>.
-  </div>
+    și <a href="https://github.com/CristianNichifor/achizitii-deschise/blob/main/CORRECTIONS.md">dreptul la replică</a>.</p>
+  </details>
 
   <nav class="tabs" id="tabs" role="tablist"></nav>
   <div class="subnav" id="subnav" hidden>
@@ -735,6 +784,10 @@ function render(table) {
     for (const c of cols) {
       const td = tr.insertCell();
       const v = row[c];
+      // The column header travels with the cell. On a phone the thead is hidden and this
+      // is what names the value; on desktop it costs an unused attribute.
+      td.dataset.label = label(c);
+      if (v === null || v === undefined) td.classList.add('empty');
       const numeric = typeof v === 'bigint' || typeof v === 'number';
       // A year is a number but not a quantity: grouping separators turn 2026 into
       // "2.026" under ro-RO. Same for anything that is an identifier rather than a count.
@@ -950,11 +1003,17 @@ function selectTab(key, ind) {
   const span = ac.ani || [];
   const nf = (x) => (x ?? 0).toLocaleString('ro-RO');
   const hasContracts = (manifest.datasets || []).some((d) => d.name === 'contracte_an');
+  // Two sentences, two elements. The first says what the data is; the second says how the
+  // page works, which is interesting once and costs a line of a phone screen every time.
+  // Only the second is dropped on a narrow screen.
   $('scale').textContent =
     `${nf(ac.achizitii_directe_randuri)} de achiziții directe`
     + (hasContracts ? ' și 3,6 milioane de contracte' : '')
-    + `, ${span[0] ?? ''}–${span[span.length - 1] ?? ''}.`
-    + ' Se interoghează direct în browser — nu există niciun server.';
+    + `, ${span[0] ?? ''}–${span[span.length - 1] ?? ''}. `;
+  const how = document.createElement('span');
+  how.className = 'how';
+  how.textContent = 'Se interoghează direct în browser — nu există niciun server.';
+  $('scale').append(how);
   $('meta').textContent = `${nf(ac.achizitii_directe_randuri)} achiziții directe`;
 
   // Six plain tabs instead of seventeen. The eight indicators were shown as bare ids
@@ -1055,6 +1114,12 @@ function heroSearch() {
   }
   run();
 }
+
+// Collapsed on a phone only. The summary — the caveat itself — stays visible either way;
+// this folds the explanation beneath it. Done in script because CSS cannot open or close
+// a <details>, and it must default to OPEN so that a reader without JavaScript, or a
+// crawler, still gets the whole thing.
+if (window.matchMedia('(max-width: 640px)').matches) $('banner').open = false;
 
 $('inapoi').querySelector('button').addEventListener('click', () => selectTab('preturi'));
 $('run').addEventListener('click', heroSearch);
