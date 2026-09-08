@@ -70,6 +70,13 @@
   /* Money is what the table is for; it should not weigh the same as a row count. */
   td.money { color:var(--ink); font-weight:600; }
   td.money[title] { cursor:help; }
+  tr.drillable { cursor:pointer; }
+  tr.drillable:hover td, tr.drillable:focus-visible td { background:var(--accent-soft); }
+  tr.drillable:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+  /* A drill-down with no way back is a trap; the tab it came from is not selected. */
+  #inapoi { display:none; margin:0 0 .75rem; }
+  #inapoi button { cursor:pointer; color:var(--accent); background:none; border:none;
+                   padding:0; font-weight:600; }
   tbody tr:last-child td { border-bottom:none; }
   details { margin-top:1.5rem; }
   summary { cursor:pointer; color:var(--muted); font-size:.85rem; }
@@ -162,6 +169,7 @@
 
   <!-- Matches the first booting() call, so the line does not change wording between
        the server-rendered HTML and the moment the module takes over. -->
+  <p id="inapoi"><button type="button">← Înapoi la prețuri unitare</button></p>
   <p id="status" class="boot">Se pregătește…</p>
   <p id="note"></p>
   <div class="wrap"><table id="out"><thead></thead><tbody></tbody></table></div>
@@ -233,8 +241,44 @@ const LABELS = {
   anulat: 'anulată', indicator: 'semnal', nr_contract: 'nr. contract',
   valoare_estimata_ron: 'valoare estimată (RON)', pct_din_estimare: '% din estimare',
   numar_oferte: 'nr. oferte', tip_procedura: 'procedură',
+  pret_unitar_ron: 'preț unitar (RON)', motiv_necomparabil: 'motiv excludere',
 };
 const label = (c) => LABELS[c] || c.replace(/_/g, ' ');
+
+// Which price group the drill-down is showing, or null.
+let drill = null;
+
+// The archive files a group can possibly appear in.
+//
+// The browser cannot glob: DuckDB-Wasm reads Parquet over HTTP range requests, and a
+// glob needs a directory listing that HTTP does not offer. Verified against a real page —
+// read_parquet('.../**/*.parquet') raises a WebAssembly exception, a list of explicit
+// URLs returns rows. So the manifest names every file and we choose from that list.
+//
+// Choosing matters. Naming all of them would mean one request per file per query, and
+// the archive grows by a file a day forever. Every group carries the dates it spans, and
+// each file is named for its day, so a group that lived for one week opens seven files
+// rather than the whole history.
+function archiveFiles(din, pana) {
+  const a = manifest.preturi_arhiva;
+  if (!a || !a.fisiere) return [];
+  const base = new URL(`${a.baza}/`, new URL('data/', location.href)).href;
+  const day = (v) => {
+    if (v === null || v === undefined) return null;
+    if (typeof v === 'string') return v.slice(0, 10);
+    return new Date(Number(v)).toISOString().slice(0, 10);
+  };
+  const from = day(din), to = day(pana);
+  return a.fisiere
+    .filter((f) => {
+      const m = f.match(/(\d{4}-\d{2}-\d{2})\.parquet$/);
+      // A file we cannot date is included rather than dropped: showing an extra
+      // acquisition is a smaller error than silently hiding one.
+      if (!m) return true;
+      return (!from || m[1] >= from) && (!to || m[1] <= to);
+    })
+    .map((f) => base + f);
+}
 
 // Romanian scale words, not SI suffixes: "mld" and "mil" are what a reader here expects,
 // and "3,85 B" would be ambiguous between billion and miliard anyway.
@@ -363,6 +407,44 @@ const VIEWS = {
                    OR um ILIKE ${lit('%' + f.q + '%')})` : ''}
       ORDER BY n DESC, mediana_ron DESC NULLS LAST
       LIMIT 200`,
+  },
+  // Not a tab. Reached by clicking a row above, and the reason the archive exists: a
+  // median is an argument, the transactions under it are the evidence. Everything else
+  // on this page is an aggregate somebody has to take on trust.
+  detaliu: {
+    label: 'Detaliu',
+    hidden: true,
+    search: null,
+    // The row count here is deliberately larger than the "achiziții" figure on the
+    // previous screen, and that has to be said. n counts what the MEDIAN used: rows
+    // marked comparabil, minus the 1st and 99th percentile. A worked example from the
+    // archive - 27 acquisitions of bananas, 25 comparable, 24 after trimming, so the
+    // group reads n=24 while this table lists 27. Showing only the 24 would hide exactly
+    // the rows a reader came to look at.
+    note: 'Toate achizițiile din grup, inclusiv cele excluse din mediană. Mediana ' +
+          'folosește doar rândurile comparabile, fără extremele de 1% și 99% — de aceea ' +
+          'sunt mai multe rânduri aici decât „achiziții" în tabelul anterior. Un preț ' +
+          'mai mare nu este o abatere: cantitatea, momentul și condițiile de livrare ' +
+          'diferă.',
+    sql: () => {
+      const files = archiveFiles(drill.din, drill.pana_la);
+      if (!files.length) return 'SELECT NULL WHERE false';
+      const eq = (col, v) =>
+        v === null || v === undefined
+          ? `${col} IS NULL`
+          : `${col} IS NOT DISTINCT FROM ${typeof v === 'number' ? v : lit(v)}`;
+      return `
+      SELECT CAST(data_finalizare AS DATE) AS data_achizitie, judet,
+             autoritate_cui, furnizor_cui, cantitate, um,
+             pret_unitar_ron, comparabil, motiv_necomparabil
+      FROM read_parquet([${files.map(lit).join(', ')}])
+      WHERE ${eq('cpv', drill.cpv)}
+        AND ${eq('denumire_key', drill.denumire_key)}
+        AND ${eq('um', drill.um)}
+        AND ${eq('marime_pachet', drill.marime_pachet)}
+      ORDER BY pret_unitar_ron DESC NULLS LAST
+      LIMIT 500`;
+    },
   },
   firme: {
     label: 'Profil firme',
@@ -573,8 +655,25 @@ function render(table) {
     const th = document.createElement('th'); th.textContent = label(c);
     th.title = c; return th;
   }));
+  const drillable = current === 'preturi';
   for (const row of table.toArray()) {
     const tr = body.insertRow();
+    if (drillable) {
+      tr.className = 'drillable';
+      tr.tabIndex = 0;
+      tr.title = 'Vezi achizițiile din spatele acestei mediane';
+      const open = () => {
+        drill = {
+          cpv: row.cpv, denumire_key: row.denumire_key, um: row.um,
+          marime_pachet: row.marime_pachet === null ? null : Number(row.marime_pachet),
+          din: row.din, pana_la: row.pana_la,
+        };
+        selectTab('detaliu');
+      };
+      tr.onclick = open;
+      // Keyboard parity: a row that only responds to a mouse is not a control.
+      tr.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } };
+    }
     for (const c of cols) {
       const td = tr.insertCell();
       const v = row[c];
@@ -583,6 +682,9 @@ function render(table) {
       // "2.026" under ro-RO. Same for anything that is an identifier rather than a count.
       const isLabel = c === 'an' || c.endsWith('_cui') || c === 'cpv';
       td.textContent = v === null || v === undefined ? '—'
+        // "true" in an otherwise Romanian table. Affects `comparabil` here and `anulat`
+        // in the meetings register.
+        : typeof v === 'boolean' ? (v ? 'da' : 'nu')
         : dates.has(c) ? new Date(Number(v)).toISOString().slice(0, 10)
         : numeric && !isLabel && money(c) ? ron(v)
         : numeric && !isLabel ? Number(v).toLocaleString('ro-RO') : String(v);
@@ -646,12 +748,16 @@ function selectTab(key, ind) {
   if (!ready) return;
   current = key;
   indicator = ind || null;
+  $('inapoi').style.display = key === 'detaliu' ? 'block' : 'none';
+  // Leaving the drill-down forgets the group, so a later click cannot inherit a stale one.
+  if (key !== 'detaliu') drill = null;
   for (const b of $('tabs').children) b.setAttribute('aria-selected', String(b.dataset.key === key));
   // Only the year-keyed views can be deflated; the price archive and the meetings
   // register are not organised by year.
   $('wrap-baza').style.display = VIEWS[key] && VIEWS[key].money ? '' : 'none';
   $('minn').parentElement.style.display =
-    (key === 'indicatori' || key === 'ruti' || key === 'firme') ? 'none' : '';
+    (key === 'indicatori' || key === 'ruti' || key === 'firme' || key === 'detaliu')
+      ? 'none' : '';
   const search = key === 'indicatori' ? null : VIEWS[key].search;
   $('q').placeholder = search
     ? `Caută după ${search}…`
@@ -672,6 +778,16 @@ function selectTab(key, ind) {
     const p = manifest.preturi_unitare;
     $('note').textContent = VIEWS.preturi.note +
       ` Arhivă: ${p.randuri.toLocaleString('ro-RO')} linii, ${p.din} → ${p.pana_la}.`;
+    run();
+    return;
+  }
+  if (key === 'detaliu' && drill) {
+    // Name the group. Landing on a bare list of prices with no idea which product they
+    // belong to is worse than not drilling in at all.
+    const pack = drill.marime_pachet ? ` × ${drill.marime_pachet}` : '';
+    $('note').textContent =
+      `${drill.denumire_key} — CPV ${drill.cpv}, ${drill.um || 'fără unitate'}${pack}. `
+      + VIEWS.detaliu.note;
     run();
     return;
   }
@@ -718,6 +834,7 @@ function selectTab(key, ind) {
   // ("dependenta-01"), which tells a reader nothing and pushed the table below the fold
   // on a phone; they now live behind one "Semnale" tab with their real names.
   for (const [key, v] of Object.entries(VIEWS)) {
+    if (v.hidden) continue;  // reached by drilling into a row, not from the tab strip
     if (key === 'preturi' && !manifest.preturi_unitare) continue;
     if (key === 'ruti' && !manifest.ruti) continue;
     if (key === 'firme' && !manifest.furnizori_profil) continue;
@@ -792,6 +909,7 @@ function heroSearch() {
   run();
 }
 
+$('inapoi').querySelector('button').addEventListener('click', () => selectTab('preturi'));
 $('run').addEventListener('click', heroSearch);
 $('q').addEventListener('keydown', (e) => { if (e.key === 'Enter') heroSearch(); });
 $('an').addEventListener('change', run);
