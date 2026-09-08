@@ -200,14 +200,22 @@ def test_only_the_product_view_lets_cpv_vary() -> None:
     codes contributed. Every other price view keeps CPV in the key, because merging
     unrelated products that happen to share wording would be worse than splitting one.
     """
-    by_name = {d.name: d.sql.split("GROUP BY")[-1] for d in UNIT_PRICE_DATASETS}
+    # The FINAL group key, not the last "GROUP BY" in the text: preturi_produs now
+    # ranks codes in a CTE that has a GROUP BY of its own, and splitting on the last one
+    # was reading the CTE's key rather than the dataset's.
+    full = {d.name: d.sql for d in UNIT_PRICE_DATASETS}
+    by_name = {
+        name: sql.rsplit("GROUP BY", 1)[-1].split("\n\n")[0]
+        for name, sql in full.items()
+    }
     assert "cpv" not in by_name["preturi_produs"], (
         "preturi_produs exists to group across CPV codes; keeping cpv in the key "
         "defeats it"
     )
-    assert "coduri" in by_name["preturi_produs"] or "count(DISTINCT cpv)" in (
-        next(d.sql for d in UNIT_PRICE_DATASETS if d.name == "preturi_produs")
-    ), "preturi_produs must report how many CPV codes were merged"
+    # Qualified or not — the column has to be there.
+    assert "AS coduri" in full["preturi_produs"], (
+        "preturi_produs must report how many CPV codes were merged"
+    )
     for name in ("preturi_unitare", "preturi_judet"):
         assert "cpv" in by_name[name], f"{name} must keep CPV in the group key"
 
