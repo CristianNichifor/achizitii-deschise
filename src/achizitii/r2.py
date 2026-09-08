@@ -38,12 +38,22 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from .config import ROOT
 
 log = logging.getLogger(__name__)
+
+BUDGET_GB = float(os.environ.get("R2_MAX_GB", "4"))
+"""Refuse to upload beyond this many gigabytes.
+
+The 10 GB free tier belongs to the whole Cloudflare account, not to this project — other
+projects draw on the same allowance. A guard that fails loudly is better than discovering
+the overage on an invoice, so publishing stops rather than silently pushing the account
+into billing. Raise it deliberately via R2_MAX_GB once you know what the account has
+spare."""
 
 PRICES_DIR = "preturi"
 MONTHLY_DIR = "preturi-lunar"
@@ -118,6 +128,24 @@ def consolidate_months(out: Path | None = None) -> list[Path]:
     return written
 
 
+def _cache_control(path: Path) -> str:
+    """How long an object may be cached at the edge.
+
+    This is the single biggest lever on Class B operations, which are shared with every
+    other project on the account. A cached read never reaches R2 and never bills.
+
+    A month that has closed cannot change — the never-shrink rule only ever adds days to
+    the CURRENT month — so past months are immutable and can be cached for a year. The
+    current month and the manifest change daily and must not be.
+    """
+    if path.name == "manifest.json":
+        return "public, max-age=300"
+    current = datetime.now(UTC).strftime("%Y-%m")
+    if path.stem == current:
+        return "public, max-age=3600"
+    return "public, max-age=31536000, immutable"
+
+
 def upload(paths: list[Path], base: Path, config: R2Config | None = None) -> dict[str, Any]:
     """Upload files to R2, skipping anything already there with the same size.
 
@@ -143,6 +171,14 @@ def upload(paths: list[Path], base: Path, config: R2Config | None = None) -> dic
         region_name="auto",
     )
 
+    planned_gb = sum(p.stat().st_size for p in paths) / 1e9
+    if planned_gb > BUDGET_GB:
+        raise RuntimeError(
+            f"upload would place {planned_gb:.2f} GB in R2, over the {BUDGET_GB:.1f} GB "
+            "budget for this project. The free tier is shared with the rest of the "
+            "account; raise R2_MAX_GB deliberately if there is room."
+        )
+
     existing: dict[str, int] = {}
     paginator = client.get_paginator("list_objects_v2")
     for page in paginator.paginate(Bucket=cfg.bucket):
@@ -167,13 +203,17 @@ def upload(paths: list[Path], base: Path, config: R2Config | None = None) -> dic
                 # A month that has closed never changes; a browser should not re-fetch it.
                 # The manifest must not be cached that way, or the site pins itself to a
                 # stale view of what exists.
-                "CacheControl": (
-                    "public, max-age=300" if path.name == "manifest.json"
-                    else "public, max-age=86400"
-                ),
+                "CacheControl": _cache_control(path),
             },
         )
         uploaded += 1
         log.info("uploaded %s (%.2f MB)", key, size / 1e6)
 
-    return {"uploaded": uploaded, "skipped": skipped, "configured": True, "bucket": cfg.bucket}
+    return {
+        "uploaded": uploaded,
+        "skipped": skipped,
+        "configured": True,
+        "bucket": cfg.bucket,
+        "gb": round(planned_gb, 3),
+        "buget_gb": BUDGET_GB,
+    }
