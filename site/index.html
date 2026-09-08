@@ -151,6 +151,13 @@
     <select id="semnal"></select>
     <span id="semnal-temei"></span>
   </div>
+  <!-- Four views answered the same question — "tell me about an organisation" — from
+       four tabs a reader had to choose between before knowing what any of them held.
+       They are now one tab and this selector, the same shape the signals already use. -->
+  <div class="subnav" id="subnav-entitate" hidden>
+    <label for="aspect">Despre</label>
+    <select id="aspect"></select>
+  </div>
 
   <div class="controls">
     <div>
@@ -299,6 +306,13 @@ function ron(v) {
   return fixed(n, 2);
 }
 
+// Four views ask the same question of different tables — who buys, who sells, what ANAF
+// records, what has been flagged — and all of them are keyed on an organisation. As four
+// tabs they forced a choice before the reader knew what any of them contained: "Autorități"
+// and "Furnizori" and "Profil firme" and "Fișă entitate" are indistinguishable if you have
+// simply typed a CUI. One tab, one selector, four answers.
+const ENTITY_GROUP = 'entitati';
+
 // Every view names the columns it selects rather than using *, so a schema change
 // upstream surfaces as an error here instead of silently reshaping the page.
 const VIEWS = {
@@ -375,6 +389,8 @@ const VIEWS = {
   },
   autoritati: {
     label: 'Autorități',
+    group: ENTITY_GROUP,
+    aspect: 'Cumpărători — cât cheltuie fiecare instituție',
     search: 'denumire sau CUI',
     money: ['valoare_totala_ron'],
     note: 'Cheltuiala unei autorități nu este un indiciu în sine — instituțiile mari ' +
@@ -448,6 +464,8 @@ const VIEWS = {
   },
   firme: {
     label: 'Profil firme',
+    group: ENTITY_GROUP,
+    aspect: 'Firme — date de înregistrare de la ANAF',
     search: 'denumire, CUI sau județ',
     note: 'Date ANAF (serviciu public). Coloana „inactiv" este starea la data ' +
           'verificării. Pentru a judeca o achiziție comparați data_inactivare / ' +
@@ -465,6 +483,8 @@ const VIEWS = {
   },
   entitate: {
     label: 'Fișă entitate',
+    group: ENTITY_GROUP,
+    aspect: 'Semnale — ce s-a marcat despre o entitate',
     search: 'instituție SAU firmă — denumire ori CUI',
     note: 'Toate semnalele care menționează o entitate — ca autoritate contractantă ' +
           'SAU ca furnizor — într-un singur loc. Un semnal înseamnă „merită ' +
@@ -490,6 +510,8 @@ const VIEWS = {
   },
   furnizori: {
     label: 'Furnizori',
+    group: ENTITY_GROUP,
+    aspect: 'Vânzători — cât încasează fiecare firmă',
     search: 'denumire sau CUI',
     money: ['valoare_totala_ron'],
     note: 'autoritati_distincte = câți cumpărători diferiți are furnizorul. Un singur ' +
@@ -637,6 +659,11 @@ function render(table) {
     status(current === 'entitate' && !$('q').value.trim()
       ? 'Scrieți denumirea sau CUI-ul unei instituții ori firme.'
       : 'Niciun rezultat. Relaxați filtrele.');
+    // "No results" is the wrong answer when the name is simply on the other side of the
+    // transaction. Searching DEDEMAN — a supplier — lands on the buyers view and reports
+    // nothing, which reads as "not in the data" rather than "wrong aspect". Grouping the
+    // four views behind one tab hides that mistake unless the page also points across it.
+    if (VIEWS[current] && VIEWS[current].group === ENTITY_GROUP) suggestOtherAspect();
     return;
   }
   const cols = table.schema.fields.map((f) => f.name);
@@ -696,12 +723,68 @@ function render(table) {
       }
     }
   }
-  status(`${table.numRows} rânduri${table.numRows === 200 ? ' (limitat la 200)' : ''}.`);
+  // Same agreement rule as everywhere else: this line has been saying "1 rânduri".
+  status(`${randuri(table.numRows)}${table.numRows === 200 ? ' (limitat la 200)' : ''}.`);
 }
 
 // A count of signals with no denominator is a smear. A large hospital generates more
 // findings than a village school because it buys more, so the entity view reports the
 // institution's total acquisitions alongside the number of signals raised.
+// Where else the searched name appears, among the views behind the Entități tab.
+// Counting only — one cheap query per sibling, and the answer is a sentence, not a
+// redirect: moving the reader somewhere they did not ask to go is worse than telling them
+// where to look.
+const ASPECT_PROBES = {
+  autoritati: (t) => `SELECT count(*) c FROM read_parquet(${lit(url('autoritati_an.parquet'))})
+                      WHERE autoritate ILIKE ${lit('%' + t + '%')}
+                         OR autoritate_cui ILIKE ${lit('%' + t + '%')}`,
+  furnizori: (t) => `SELECT count(*) c FROM read_parquet(${lit(url('furnizori_an.parquet'))})
+                     WHERE furnizor ILIKE ${lit('%' + t + '%')}
+                        OR furnizor_cui ILIKE ${lit('%' + t + '%')}`,
+  firme: (t) => `SELECT count(*) c FROM read_parquet(${lit(url('furnizori_profil.parquet'))})
+                 WHERE denumire ILIKE ${lit('%' + t + '%')}
+                    OR cui ILIKE ${lit('%' + t + '%')}`,
+};
+
+// Romanian needs the noun agreed with the number, and inserts "de" above twenty:
+// 1 rând, 2 rânduri, 20 DE rânduri, 101 rânduri, 120 DE rânduri. The rule is the last two
+// digits: 0 or 20-99 takes "de". Getting this wrong reads as a machine wrote the page.
+function randuri(n) {
+  if (n === 1) return '1 rând';
+  const last = n % 100;
+  const de = last === 0 || last >= 20 ? 'de ' : '';
+  return `${n.toLocaleString('ro-RO')} ${de}rânduri`;
+}
+
+async function suggestOtherAspect() {
+  const term = $('q').value.trim();
+  if (!term || !conn) return;
+  // Every sibling is probed and the BIGGEST match wins, rather than the first. Searching
+  // a supplier used to be answered with its one-row ANAF registry entry while its
+  // hundreds of actual sales sat unmentioned in the next view along.
+  // Concurrently, not in sequence. Run one after another the reader watches "no results"
+  // sit there for seconds before it changes its mind; the wait is now the slowest single
+  // probe rather than their sum.
+  const keys = [...$('aspect').options]
+    .map((o) => o.value)
+    .filter((k) => k !== current && ASPECT_PROBES[k]);
+  const counts = await Promise.all(keys.map(async (key) => {
+    try {
+      const r = await conn.query(ASPECT_PROBES[key](term));
+      return { key, n: Number(r.toArray()[0].c) };
+    } catch {
+      return { key, n: 0 };  // a failed probe must not replace a correct "no results"
+    }
+  }));
+  const found = counts.filter((x) => x.n > 0);
+  if (!found.length) return;
+  found.sort((a, z) => z.n - a.n);
+  const best = found[0];
+  const label = VIEWS[best.key].aspect || VIEWS[best.key].label;
+  status(`Niciun rezultat aici. „${term}” apare la „${label}” (${randuri(best.n)})`
+       + ' — schimbați selectorul de mai sus.');
+}
+
 async function entityContext(term) {
   if (!term) return '';
   try {
@@ -751,7 +834,14 @@ function selectTab(key, ind) {
   $('inapoi').style.display = key === 'detaliu' ? 'block' : 'none';
   // Leaving the drill-down forgets the group, so a later click cannot inherit a stale one.
   if (key !== 'detaliu') drill = null;
-  for (const b of $('tabs').children) b.setAttribute('aria-selected', String(b.dataset.key === key));
+  for (const b of $('tabs').children) {
+    // The shared tab is selected for any of the views behind it, or moving the selector
+    // would leave no tab highlighted at all.
+    const active = b.dataset.key === key
+      || (b.dataset.key === ENTITY_GROUP
+          && !!(VIEWS[key] && VIEWS[key].group === ENTITY_GROUP));
+    b.setAttribute('aria-selected', String(active));
+  }
   // Only the year-keyed views can be deflated; the price archive and the meetings
   // register are not organised by year.
   $('wrap-baza').style.display = VIEWS[key] && VIEWS[key].money ? '' : 'none';
@@ -764,8 +854,17 @@ function selectTab(key, ind) {
     : 'Caută o autoritate, o firmă sau un CUI…';
   $('hint').textContent = search
     ? ''
-    : 'Acest tabel nu se filtrează după text; o căutare vă duce la Autorități.';
+    // Names the tab the reader will actually land on. "Autorități" stopped being a tab
+    // when the four entity views were grouped; sending someone to look for it would be
+    // worse than saying nothing.
+    : 'Acest tabel nu se filtrează după text; o căutare vă duce la Entități.';
   $('subnav').hidden = key !== 'indicatori';
+  // The grouped views share one tab, so the selector shows for any of them and keeps
+  // itself in step when a view is reached some other way — the hero search falls back to
+  // `autoritati`, which is one of them.
+  const grouped = !!(VIEWS[key] && VIEWS[key].group === ENTITY_GROUP);
+  $('subnav-entitate').hidden = !grouped;
+  if (grouped) $('aspect').value = key;
   if (key === 'indicatori' && indicator) {
     const opt = [...$('semnal').options].find((o) => o.value === indicator.id);
     if (opt) $('semnal').value = indicator.id;
@@ -833,6 +932,7 @@ function selectTab(key, ind) {
   // Six plain tabs instead of seventeen. The eight indicators were shown as bare ids
   // ("dependenta-01"), which tells a reader nothing and pushed the table below the fold
   // on a phone; they now live behind one "Semnale" tab with their real names.
+  let entityTabPlaced = false;
   for (const [key, v] of Object.entries(VIEWS)) {
     if (v.hidden) continue;  // reached by drilling into a row, not from the tab strip
     if (key === 'preturi' && !manifest.preturi_unitare) continue;
@@ -840,12 +940,31 @@ function selectTab(key, ind) {
     if (key === 'firme' && !manifest.furnizori_profil) continue;
     if (key === 'judete'
         && !(manifest.datasets || []).some((d) => d.name === 'judete_an')) continue;
+
+    // The grouped views get one tab between them, placed where the first of them would
+    // have gone, and one entry each in the selector. Availability is decided above, so a
+    // view whose dataset is missing never reaches the selector either.
+    if (v.group === ENTITY_GROUP) {
+      const o = document.createElement('option');
+      o.value = key; o.textContent = v.aspect || v.label;
+      $('aspect').append(o);
+      if (entityTabPlaced) continue;
+      entityTabPlaced = true;
+      const g = document.createElement('button');
+      g.textContent = 'Entități'; g.dataset.key = ENTITY_GROUP; g.role = 'tab';
+      g.disabled = true;
+      g.onclick = () => selectTab($('aspect').value);
+      $('tabs').append(g);
+      continue;
+    }
+
     const b = document.createElement('button');
     b.textContent = v.label; b.dataset.key = key; b.role = 'tab';
     b.disabled = true;  // enabled once the engine is up; see the boot block below
     b.onclick = () => selectTab(key);
     $('tabs').append(b);
   }
+  $('aspect').addEventListener('change', () => selectTab($('aspect').value));
 
   const semnale = manifest.indicatori || [];
   if (semnale.length) {
