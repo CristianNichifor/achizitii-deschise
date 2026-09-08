@@ -53,9 +53,13 @@ what drew the block. It also remains correct — it is the difference between ca
 
 Contact SEAP support with:
 
-- **public IP:** `82.79.122.161`
+- **the public IP that was restricted** — deliberately not recorded here; it is a
+  residential address, it identifies a person rather than the project, and a public
+  incident report is not the place for it. It is in the operator's own logs, and whoever
+  sends the request will know their own address.
 - **time:** 2026-09-07 ~22:50 UTC (01:50 EEST, 8 September)
-- context: automated collection for an open-data project, since corrected to ~8 req/s
+- context: automated collection for an open-data project, since corrected to 1.5 req/s —
+  within the published limit of 500 requests per 5 minutes
 
 ## The rule this establishes
 
@@ -92,7 +96,7 @@ The same announcement discourages parallel queries, repeated requests at short i
 and **continuous automated processes over extended periods**, and directs anyone needing
 high-volume or recurring programmatic access to contact support. A multi-month crawl is
 what that paragraph describes, at any rate. The next step is a request to SEAP support —
-both to lift the block on 82.79.122.161 and to ask what bulk or whitelisted access exists
+both to lift the block and to ask what bulk or whitelisted access exists
 for a public-interest open-data project. Not another round of tuning.
 
 ### The lesson, stated plainly
