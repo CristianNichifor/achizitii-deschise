@@ -438,24 +438,31 @@ def test_a_group_without_a_unit_keeps_its_principal_cpv() -> None:
     con.close()
 
 
-def test_the_front_door_files_match_the_query_they_replace() -> None:
+def test_the_front_door_json_matches_the_query_it_replaces() -> None:
     """The front door's whole claim is that every figure on it is the same figure as the
     tab it links to. A precomputed summary is a second source of truth, and this is what
     stops it becoming a divergent one.
 
-    They read the PUBLISHED Parquet rather than the underlying view — which matters more
+    It reads the PUBLISHED Parquet rather than the underlying view — which matters more
     than it looks. `autoritati_an.valoare_totala_ron` is already rounded per year, so
     summing those rounded figures is not the same number as rounding a sum of the raw
-    values. Aggregating `ad` directly here would produce a front door that disagreed with
-    its own table by a few lei, for no visible reason.
+    values. Aggregating `ad` directly would produce a front door that disagreed with its
+    own table by a few lei, for no visible reason.
     """
+    import datetime as dt
+    from decimal import Decimal
+
     import duckdb
 
+    from achizitii.publish import PANORAMA_DATASETS
+
     out = Path("site/data")
-    for name in ("autoritati_an.parquet", "preturi_unitare.parquet"):
+    stored_path = out / "panorama.json"
+    for name in ("autoritati_an.parquet", "preturi_unitare.parquet", "panorama.json"):
         if not (out / name).is_file():
             pytest.skip(f"{name} not published in this checkout")
 
+    stored = json.loads(stored_path.read_text(encoding="utf-8"))
     con = duckdb.connect()
     con.execute(
         "CREATE VIEW pub_autoritati_an AS SELECT * FROM "
@@ -465,31 +472,50 @@ def test_the_front_door_files_match_the_query_they_replace() -> None:
         "CREATE VIEW pub_preturi_unitare AS SELECT * FROM "
         f"read_parquet('{out / 'preturi_unitare.parquet'}')"
     )
-    from achizitii.publish import PANORAMA_DATASETS
+
+    def jsonable(v):
+        if isinstance(v, (dt.date, dt.datetime)):
+            return v.isoformat()[:10]
+        if isinstance(v, Decimal):
+            return float(v)
+        return v
 
     for d in PANORAMA_DATASETS:
-        target = out / f"{d.name}.parquet"
-        if not target.is_file():
-            pytest.skip(f"{d.name} not published in this checkout")
-        live = con.execute(d.sql).fetchall()
-        stored = con.execute(f"SELECT * FROM read_parquet('{target}')").fetchall()
-        assert stored == live, (
-            f"{d.name} on disk differs from the query it stands in for — the front door "
-            "would show different numbers from the tab it links to"
+        block = d.name.removeprefix("panorama_")
+        assert block in stored, f"panorama.json has no {block} block"
+        cur = con.execute(d.sql)
+        names = [c[0] for c in cur.description]
+        live = [dict(zip(names, (jsonable(v) for v in row), strict=True))
+                for row in cur.fetchall()]
+        assert stored[block] == live, (
+            f"the {block} block on disk differs from the query it stands in for — the "
+            "front door would show different numbers from the tab it links to"
         )
     con.close()
 
 
-def test_the_front_door_files_are_small_enough_to_be_worth_it() -> None:
-    """The point of them. Rendering the front door pulled 3.32 MB of autoritati_an and
-    0.48 MB of preturi_unitare — essentially both files in full, to show six rows each,
-    because `GROUP BY` over every row cannot be served by a range request."""
-    out = Path("site/data")
-    for name in ("panorama_cumparatori", "panorama_preturi"):
-        f = out / f"{name}.parquet"
-        if not f.is_file():
-            pytest.skip(f"{name} not published in this checkout")
-        assert f.stat().st_size < 20_000, (
-            f"{name} is {f.stat().st_size:,} bytes; if it grows to the size of the table "
-            "it summarises it has stopped being worth its own existence"
+def test_the_front_door_json_is_small_enough_to_be_worth_it() -> None:
+    """The point of it. Rendering the front door pulled 3,32 MB of autoritati_an and
+    0,48 MB of preturi_unitare — essentially both files in full, to show six rows each,
+    because `GROUP BY` over every row cannot be served by a range request. Worse, reading
+    Parquet at all meant booting a 4 MB engine first.
+    """
+    f = Path("site/data/panorama.json")
+    if not f.is_file():
+        pytest.skip("panorama.json not published in this checkout")
+    assert f.stat().st_size < 20_000, (
+        f"panorama.json is {f.stat().st_size:,} bytes; if it grows toward the size of the "
+        "tables it summarises it has stopped being worth its own existence"
+    )
+
+
+def test_the_front_door_summary_leaves_no_parquet_behind() -> None:
+    """An earlier version of this wrote two Parquet files. A bundle upgraded in place must
+    not keep serving them, or the site has two summaries and no way to tell which is
+    current."""
+    from achizitii.publish import PANORAMA_DATASETS
+
+    for d in PANORAMA_DATASETS:
+        assert not (Path("site/data") / f"{d.name}.parquet").is_file(), (
+            f"{d.name}.parquet is still published alongside panorama.json"
         )

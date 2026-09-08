@@ -52,8 +52,11 @@ def test_the_front_door_is_what_opens(source: str) -> None:
 
 
 def test_a_link_still_beats_the_front_door(source: str) -> None:
-    """Every address shared before this existed must keep opening what it named."""
-    assert "if (!applyHash()) goDefault();" in source
+    """Every address shared before this existed must keep opening what it named — and the
+    front door is now drawn before the engine loads, so it must not draw at all when the
+    hash names something else, or a shared link would flash past it."""
+    assert "if (!applyHash() && !earlyDrawn) goDefault();" in source
+    assert "!new URLSearchParams(location.hash.replace(/^#/, '')).get('v')" in source
 
 
 def test_it_makes_no_claim_of_its_own(source: str) -> None:
@@ -63,6 +66,33 @@ def test_it_makes_no_claim_of_its_own(source: str) -> None:
     for target in ("selectTab('preturi')", "selectTab('detaliu')",
                    "selectTab('dosar')", "selectTab('indicatori', ind)"):
         assert target in body, f"no doorway to {target}"
+
+
+def test_the_front_door_needs_no_database_engine(source: str) -> None:
+    """The point of publishing its rows as JSON.
+
+    Measured on the published site: a first visit spent about four seconds on a spinner
+    while 3,4 MB of DuckDB-Wasm and a 0,7 MB worker downloaded — in order to read three
+    kilobytes of data. The engine is what the TABS need; the landing page needs a fetch.
+    """
+    assert "let panoramaData = null;" in source
+    assert "manifest.panorama" in source
+    assert "function arrowLike(" in source, (
+        "JSON rows have to satisfy the same two readers as an Arrow table"
+    )
+    # And the early path must not touch the connection.
+    body = _body(source, "  if (current === 'panorama' && panoramaData && !conn) {", 400)
+    assert "await runPanorama();" in body
+    assert "conn.query" not in body
+
+
+def test_no_json_field_is_declared_as_a_date(source: str) -> None:
+    """fillTable sniffs dates off the type string and then does `new Date(Number(v))`,
+    which turns the ISO strings JSON carries into NaN. The only date columns on the front
+    door are hidden from the table and reach the drill-down through dayOf(), which takes
+    strings."""
+    body = _body(source, "function arrowLike(", 600)
+    assert "toString: () => 'Utf8'" in body
 
 
 def test_the_blocks_arrive_together(source: str) -> None:

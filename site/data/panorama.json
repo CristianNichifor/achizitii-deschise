@@ -1,0 +1,120 @@
+{
+ "cumparatori": [
+  {
+   "autoritate_cui": "1590120",
+   "autoritate": "REGIA NATIONALA A PADURILOR - ROMSILVA RA",
+   "n": 29236,
+   "valoare_totala_ron": 501312179.0
+  },
+  {
+   "autoritate_cui": "4204003",
+   "autoritate": "INSTITUTUL CLINIC FUNDENI",
+   "n": 28802,
+   "valoare_totala_ron": 420184763.0
+  },
+  {
+   "autoritate_cui": "1890420",
+   "autoritate": "S.C RAJA S.A CONSTANTA",
+   "n": 69831,
+   "valoare_totala_ron": 418930681.0
+  },
+  {
+   "autoritate_cui": "1959768",
+   "autoritate": "Apavital SA Iasi",
+   "n": 28986,
+   "valoare_totala_ron": 284384222.0
+  },
+  {
+   "autoritate_cui": "4364446",
+   "autoritate": "ORAS OTOPENI",
+   "n": 3714,
+   "valoare_totala_ron": 257203728.0
+  },
+  {
+   "autoritate_cui": "2351555",
+   "autoritate": "Regia Autonoma Administratia Patrimoniului Protocolului de Stat Bucuresti",
+   "n": 40838,
+   "valoare_totala_ron": 245373954.0
+  }
+ ],
+ "preturi": [
+  {
+   "denumire_key": "servicii de telecomunicatii",
+   "um": "luna",
+   "n": 8,
+   "de_cate_ori": 12.6,
+   "p10_ron": 111.5,
+   "mediana_ron": 211.25,
+   "p90_ron": 1402.02,
+   "cpv": "64200000",
+   "marime_pachet": null,
+   "din": "2026-07-01",
+   "pana_la": "2026-07-03"
+  },
+  {
+   "denumire_key": "materiale electrice",
+   "um": "buc",
+   "n": 9,
+   "de_cate_ori": 8.3,
+   "p10_ron": 212.79,
+   "mediana_ron": 419.41,
+   "p90_ron": 1760.98,
+   "cpv": "31681410",
+   "marime_pachet": null,
+   "din": "2026-07-02",
+   "pana_la": "2026-07-06"
+  },
+  {
+   "denumire_key": "servicii de deratizare",
+   "um": "mp",
+   "n": 15,
+   "de_cate_ori": 7.4,
+   "p10_ron": 0.19,
+   "mediana_ron": 0.4,
+   "p90_ron": 1.4,
+   "cpv": "90923000",
+   "marime_pachet": null,
+   "din": "2026-07-01",
+   "pana_la": "2026-09-06"
+  },
+  {
+   "denumire_key": "platforma de management educational viva catalog",
+   "um": "luna",
+   "n": 16,
+   "de_cate_ori": 6.3,
+   "p10_ron": 632.81,
+   "mediana_ron": 1498.0,
+   "p90_ron": 4000.0,
+   "cpv": "72322000",
+   "marime_pachet": null,
+   "din": "2026-07-02",
+   "pana_la": "2026-07-06"
+  },
+  {
+   "denumire_key": "produse alimentare",
+   "um": "buc",
+   "n": 23,
+   "de_cate_ori": 6.2,
+   "p10_ron": 242.9,
+   "mediana_ron": 608.65,
+   "p90_ron": 1501.12,
+   "cpv": "15800000",
+   "marime_pachet": null,
+   "din": "2026-07-01",
+   "pana_la": "2026-07-06"
+  },
+  {
+   "denumire_key": "pachet diverse articole",
+   "um": "pachet",
+   "n": 6,
+   "de_cate_ori": 5.9,
+   "p10_ron": 383.66,
+   "mediana_ron": 1337.82,
+   "p90_ron": 2254.09,
+   "cpv": "44423000",
+   "marime_pachet": 2,
+   "din": "2026-07-01",
+   "pana_la": "2026-07-06"
+  }
+ ]
+}
