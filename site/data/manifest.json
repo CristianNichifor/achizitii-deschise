@@ -49,22 +49,22 @@
     {
       "name": "preturi_unitare",
       "file": "preturi_unitare.parquet",
-      "rows": 6362,
-      "bytes": 123016,
+      "rows": 11822,
+      "bytes": 228940,
       "description": "Median unit price per product group. A group is CPV + product key + unit + pack size; percentiles are null below n=5. Never compare across units or pack sizes."
     },
     {
       "name": "preturi_produs",
       "file": "preturi_produs.parquet",
-      "rows": 6226,
-      "bytes": 120273,
+      "rows": 11542,
+      "bytes": 223926,
       "description": "The same product across CPV codes: grouped on description, unit and pack size while the code is allowed to vary. `coduri` says how many CPV codes contributed, so a wide spread is visible rather than hidden."
     },
     {
       "name": "preturi_judet",
       "file": "preturi_judet.parquet",
-      "rows": 6648,
-      "bytes": 122038,
+      "rows": 12645,
+      "bytes": 234814,
       "description": "The same groups broken down by county, for comparing what different buyers paid for the same thing. Suppressed below n=5 per county."
     }
   ],
@@ -240,11 +240,11 @@
     }
   ],
   "arhivat_azi": [
-    "preturi/an=2026/luna=07/2026-07-01.parquet"
+    "preturi/an=2026/luna=07/2026-07-02.parquet"
   ],
   "preturi_unitare": {
-    "randuri": 11703,
-    "zile_arhivate": 3,
+    "randuri": 22669,
+    "zile_arhivate": 4,
     "din": "2026-07-01",
     "pana_la": "2026-09-06",
     "nota": "Prețurile unitare nu pot fi reconstituite retroactiv: exporturile în masă nu conțin cantități. Arhiva crește doar înainte, de la prima zi colectată."
