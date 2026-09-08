@@ -57,10 +57,26 @@ jobs:
             ARGS+=(--start "${{ inputs.start }}")
             [ -n "${{ inputs.end }}" ] && ARGS+=(--end "${{ inputs.end }}")
           else
-            # Today AND yesterday: an acquisition finalised late in the evening is
-            # often still arriving when the small hours run, and yesterday costs
-            # nothing once it is complete — the archive refuses to shrink it.
-            ARGS+=(--days-back 1)
+            # The three days ending YESTERDAY. Today is never collected: the window is
+            # `end = yesterday, start = end - (days_back - 1)`, so a day is only fetched
+            # once it has finished in Romanian local time. The comment this replaces said
+            # "today and yesterday", which the code has never done.
+            #
+            # Three days, not one, because GitHub's
+            # scheduler is not a clock. This workflow asks for 04:20 UTC; an observed
+            # run started at 09:20 — five hours late — and GitHub documents that
+            # scheduled runs may be delayed or DROPPED ENTIRELY under load.
+            #
+            # With a one-day window, two consecutive misses lose a day for good: unit
+            # prices cannot be backfilled, because no bulk export carries quantities.
+            # The archive only ever grows forward from the first day collected, so a
+            # hole in it is permanent.
+            #
+            # Re-covering a day already collected is nearly free. archived_ids() drops
+            # every acquisition already stored before any detail call is made, so the
+            # cost is the list requests alone: about 29 per day, roughly 20 seconds at
+            # 1.5 rps. Three days of insurance costs about a minute.
+            ARGS+=(--days-back 3)
           fi
           [ -n "${{ inputs.limit }}" ] && ARGS+=(--limit "${{ inputs.limit }}")
           achizitii seap "${ARGS[@]}"
