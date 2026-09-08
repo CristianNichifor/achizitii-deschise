@@ -1553,11 +1553,28 @@ async function runPanorama() {
   const host = $('panorama');
   host.textContent = '';
 
+  // Read the precomputed file where the bundle has one, and fall back to computing it
+  // here where it does not.
+  //
+  // Why it matters: aggregating in the browser cost 3,32 MB for the buyers block and
+  // 0,48 MB for the prices block — essentially both files in full, to show six rows each.
+  // Range requests cannot help, because `GROUP BY autoritate_cui` over 155.521 rows
+  // genuinely needs all of them. The precomputed files are 1.095 and 2.058 bytes.
+  //
+  // The fallback is not defensive padding: `publish --only preturi` on a runner without
+  // the bulk archive can leave a bundle without them, and an older published bundle has
+  // neither. A front door that goes blank because a file is absent would be a worse
+  // failure than a slow one.
+  const has = (n) => (manifest.datasets || []).some((d) => d.name === n);
+  const gata = (name, live) => (has(name)
+    ? `SELECT * FROM read_parquet(${lit(url(name + '.parquet'))})`
+    : live);
+
   // Started together, awaited together. A failed query is one doorway fewer, never a
   // broken page, so each catches its own.
   const nMin = manifest.min_group_for_median || 5;
   const cereri = Promise.all([
-    !manifest.preturi_unitare ? null : conn.query(`
+    !manifest.preturi_unitare ? null : conn.query(gata('panorama_preturi', `
       SELECT denumire_key, um, n,
              -- Immediately after the count, not last: it is the number this block is
              -- about, and at the end of seven columns it was the one cut off the right
@@ -1568,15 +1585,15 @@ async function runPanorama() {
       FROM read_parquet(${lit(url('preturi_unitare.parquet'))})
       WHERE n >= ${nMin} AND p10_ron > 0
       ORDER BY de_cate_ori DESC NULLS LAST
-      LIMIT 6`).catch(() => null),
-    conn.query(`
+      LIMIT 6`)).catch(() => null),
+    conn.query(gata('panorama_cumparatori', `
       SELECT autoritate_cui, any_value(autoritate) AS autoritate,
              sum(n)::BIGINT AS n, round(sum(valoare_totala_ron)) AS valoare_totala_ron
       FROM read_parquet(${lit(url('autoritati_an.parquet'))})
       WHERE autoritate_cui IS NOT NULL AND autoritate_cui <> ''
       GROUP BY autoritate_cui
       ORDER BY valoare_totala_ron DESC NULLS LAST
-      LIMIT 6`).catch(() => null),
+      LIMIT 6`)).catch(() => null),
   ]);
   const [preturi, cumparatori] = await cereri;
 
