@@ -84,8 +84,9 @@ def test_romanian_counts_agree_with_the_number(source: str) -> None:
     for name in ("randuri", "organizatii"):
         delegate = source.split(f"function {name}(")[1][:120]
         assert "numeral(" in delegate, f"{name} must use the shared rule, not restate it"
-    # And it must actually be used, not merely defined.
-    assert "randuri(table.numRows)" in source
+    # And it must actually be used, not merely defined. `shown`, not `table.numRows`:
+    # the query fetches one row more than the page displays.
+    assert "randuri(shown)" in source
 
 
 def test_filter_visibility_is_derived_not_remembered(source: str) -> None:
