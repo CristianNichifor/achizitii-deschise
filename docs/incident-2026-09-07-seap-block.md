@@ -133,9 +133,25 @@ can be taken before someone objects.
 
 ### What happens while waiting
 
-Nothing changes. The daily job keeps running from GitHub runners, which were never blocked
-— one collected 11,271 line items on 2026-09-08 at 02:56 UTC — at a rate inside the
-published limit. Only local development is cut off.
+**Superseded the same day.** This section said "nothing changes — the daily job keeps
+running from GitHub runners, which were never blocked, at a rate inside the published
+limit; only local development is cut off." That was true when written and is no longer.
+
+Later on 2026-09-08 the decision was taken to **hold all automated collection**, including
+the scheduled job that was operating inside the published ceiling. Nothing now contacts
+SEAP unless a person starts it by hand. The switch and the reasoning live on the schedule
+trigger in `.github/workflows/daily.yml`, and `tests/test_seap_hold.py` guards it.
+
+The hold is narrower than it sounds: the same scheduled job still mirrors the RUTI
+meetings register, rebuilds the published bundle and uploads to R2, none of which touches
+SEAP. Only the ingest is off.
+
+**What it costs, stated once so it is not rediscovered later.** Unit prices cannot be
+reconstructed retroactively — no bulk export carries quantities — so the archive only ever
+grows forward from the first day collected. Every day held is a day that can never be
+added. `2026-09-05` and `2026-09-07` are already gone. That is a deliberate price for
+being able to say, truthfully, that nothing automated has touched SEAP since the request
+went in.
 
 The answer decides the shape of the project. A bulk export makes the ~266-day figure
 irrelevant. No bulk export makes the daily archive the product, growing forward, which the
