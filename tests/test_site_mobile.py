@@ -30,8 +30,11 @@ def source() -> str:
 
 def test_rows_become_cards_on_a_phone(source: str) -> None:
     phone = source.split("max-width: 640px")[1][:2600]
-    assert "#out thead { display:none; }" in phone, "the header row moves into the cells"
-    assert "#out td::before" in phone, "each cell must carry its own label"
+    # Keyed on the class every data table carries, not on #out. The entity file draws
+    # four more tables, and rules written against one id would leave each of its sections
+    # a 1816px table in a 390px viewport — the fault this layout exists to fix.
+    assert ".tbl thead { display:none; }" in phone, "the header row moves into the cells"
+    assert ".tbl td::before" in phone, "each cell must carry its own label"
     assert "attr(data-label)" in phone
 
 
@@ -43,7 +46,7 @@ def test_every_cell_carries_its_column_header(source: str) -> None:
 def test_empty_cells_are_dropped_from_cards(source: str) -> None:
     """A dash costs a whole line on a card, and says nothing."""
     assert "td.classList.add('empty')" in source
-    assert "#out td.empty { display:none; }" in source
+    assert ".tbl td.empty { display:none; }" in source
 
 
 def test_the_caveat_headline_is_never_hidden(source: str) -> None:

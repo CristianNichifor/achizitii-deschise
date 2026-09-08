@@ -69,12 +69,21 @@ def test_the_hint_names_a_tab_that_exists(source: str) -> None:
     assert "vă duce la Autorități" not in source
 
 
-def test_romanian_row_counts_agree_with_the_number(source: str) -> None:
-    """1 rând, 2 rânduri, 20 DE rânduri. The page was saying "1 rânduri"."""
-    assert "function randuri(" in source
-    body = source.split("function randuri(")[1][:400]
-    assert "'1 rând'" in body or '"1 rând"' in body
+def test_romanian_counts_agree_with_the_number(source: str) -> None:
+    """1 rând, 2 rânduri, 20 DE rânduri. The page was saying "1 rânduri".
+
+    The rule now lives in one place. It used to be inside `randuri`, and then the entity
+    chooser needed to count organisations rather than rows — copying a grammar rule to
+    say "39 de organizații" is how the two spellings drift apart.
+    """
+    assert "function numeral(" in source
+    body = source.split("function numeral(")[1][:400]
     assert "last >= 20" in body, "the 'de' form above twenty is part of the rule"
+    assert "function randuri(" in source
+    assert "function organizatii(" in source
+    for name in ("randuri", "organizatii"):
+        delegate = source.split(f"function {name}(")[1][:120]
+        assert "numeral(" in delegate, f"{name} must use the shared rule, not restate it"
     # And it must actually be used, not merely defined.
     assert "randuri(table.numRows)" in source
 
