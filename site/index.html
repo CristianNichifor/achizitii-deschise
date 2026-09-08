@@ -435,6 +435,8 @@
        detail. -->
   <p class="share">
     <button type="button" id="copiaza">Copiază linkul acestei vizualizări</button>
+    <button type="button" id="descarca"
+            title="Rezultatul întreg, nu doar pagina afișată. Valori brute: date ISO, zecimale cu punct.">Descarcă CSV</button>
     <span id="copiat" role="status"></span>
   </p>
 
@@ -1151,9 +1153,8 @@ function controlsFor(key) {
   }
 }
 
-function buildSql() {
+function buildSql(f = filters()) {
   if (current === 'indicatori') {
-    const f = filters();
     // Only three of the seven findings tables carry a year column; the rest aggregate
     // across years by nature. Filtering blind would emit SQL that fails to bind, so the
     // manifest says which columns each file actually has.
@@ -1163,7 +1164,122 @@ function buildSql() {
       ${f.an && hasYear ? `WHERE an = ${f.an}` : ''}
       ${f.tail('1')}`;
   }
-  return deflate(VIEWS[current].sql(filters()), VIEWS[current]);
+  return deflate(VIEWS[current].sql(f), VIEWS[current]);
+}
+
+// ---------------------------------------------------------------------------
+// Download what is on screen.
+//
+// A journalist cannot cite what they cannot save, and a researcher should not have to
+// clone a repository to read a table. Until now the only way out of this page was a
+// screenshot or the SQL panel.
+//
+// Two rules, and both of them are the whole point:
+//
+// 1. RAW VALUES, NEVER THE DISPLAYED ONES. The table abbreviates 3.854.469.918 to
+//    "3,85 mld" and localises decimals, because that is what a person reads. A file
+//    that carried "3,85 mld" into a spreadsheet would be worse than no file: it looks
+//    like data and is not. Dates go out ISO, decimals with a dot, booleans as
+//    true/false — the interoperable spellings, not the Romanian ones.
+//
+// 2. THE WHOLE RESULT, NOT THE PAGE. The reader filtered to something; the page window
+//    is an artefact of reading it on a screen. A file of exactly the 200 rows that
+//    happened to be visible would be a trap.
+const EXPORT_MAX = 100000;
+
+// The current query without the page window. One row more than the cap, so the count
+// afterwards can say honestly whether anything was left behind.
+function exportFilters() {
+  const f = filters();
+  return {
+    ...f,
+    tail(implicit) {
+      const order = validSort(sortCol)
+        ? `${sortCol} ${sortDir === 'asc' ? 'ASC' : 'DESC'} NULLS LAST`
+        : implicit;
+      return `ORDER BY ${order}\n      LIMIT ${EXPORT_MAX + 1}`;
+    },
+  };
+}
+
+function csvCell(v, isDate) {
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'boolean') return v ? 'true' : 'false';
+  if (isDate) return new Date(Number(v)).toISOString().slice(0, 10);
+  if (typeof v === 'bigint' || typeof v === 'number') return String(v);
+  const t = String(v);
+  // RFC 4180: quote when the value could otherwise break the row, and double the quotes
+  // inside it. Romanian names carry commas often enough that this is not theoretical.
+  return /[",\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+}
+
+function toCsv(table, maxRows) {
+  const cols = table.schema.fields.map((f) => f.name);
+  const dates = new Set(
+    table.schema.fields.filter((f) => /Date|Timestamp/.test(f.type.toString())).map((f) => f.name),
+  );
+  // The Parquet column names, not the page's Romanian labels: a file is read by a
+  // program more often than by a person, and the names have to match the schema the
+  // repository documents.
+  const lines = [cols.join(',')];
+  for (const row of table.toArray().slice(0, maxRows)) {
+    lines.push(cols.map((c) => csvCell(row[c], dates.has(c))).join(','));
+  }
+  return lines.join('\r\n');
+}
+
+function exportName(ext) {
+  const bits = ['achizitii', current];
+  if (current === 'indicatori' && indicator) bits.push(indicator.id);
+  const f = filters();
+  if (f.q) bits.push(f.q);
+  if (f.an) bits.push(f.an);
+  // The inflation base belongs in the NAME. The export carries whatever the view is
+  // showing, which is right — but with adjustment on, the summary's 2025 services line
+  // reads 5.303.499.883,74 where the nominal file reads 7.670.355.032. Two files with
+  // the same name and different numbers, distinguished only by a dropdown the reader
+  // set minutes ago, is how a figure ends up in an article with no idea what it means.
+  if ($('baza').value && VIEWS[current] && VIEWS[current].money) {
+    bits.push(`lei-${$('baza').value}`);
+  }
+  return `${bits.join('-')}.${ext}`.toLowerCase()
+    .replace(/[^a-z0-9.-]+/g, '-')
+    .replace(/-+/g, '-');
+}
+
+async function exportCsv() {
+  if (!conn) return;
+  const btn = $('descarca');
+  btn.disabled = true;
+  const before = $('status').textContent;
+  status('Se pregătește fișierul…');
+  try {
+    const table = await conn.query(buildSql(exportFilters()));
+    const capped = table.numRows > EXPORT_MAX;
+    const n = Math.min(table.numRows, EXPORT_MAX);
+    // A BOM, because without it Excel reads UTF-8 as Latin-1 and every diacritic in
+    // every institution name arrives mangled.
+    const blob = new Blob(['﻿' + toCsv(table, EXPORT_MAX)],
+                          { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = exportName('csv');
+    a.click();
+    URL.revokeObjectURL(a.href);
+    status(capped
+      // Said out loud rather than left to be discovered by counting rows in a
+      // spreadsheet. The Parquet files are linked from the front door for anyone who
+      // wants the whole thing.
+      ? `${randuri(n)} descărcate — rezultatul are mai multe. Pentru tot setul, `
+        + 'folosiți fișierele Parquet (vezi Panoramă → Ce acoperă datele).'
+      : `${randuri(n)} descărcate.`);
+  } catch (err) {
+    status(`Eroare la descărcare: ${err.message}`);
+    console.error(err);
+    setTimeout(() => status(before), 5000);
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1611,6 +1727,19 @@ async function runPanorama() {
          + 'legat de datele de achiziții.');
   }
   sec4.append(dl);
+  const brut = document.createElement('p');
+  brut.className = 'lede';
+  brut.style.margin = '.6rem 0 0';
+  brut.append(document.createTextNode('Fișierele sunt servite direct, nu doar prin '
+    + 'pagină: '));
+  const a = document.createElement('a');
+  a.href = new URL('data/manifest.json', location.href).href;
+  a.textContent = 'manifest.json';
+  brut.append(a);
+  brut.append(document.createTextNode(' listează fiecare set, cu numele coloanelor și '
+    + 'numărul de rânduri; fișierele Parquet stau lângă el. Orice tabel din pagină se '
+    + 'descarcă și ca CSV.'));
+  sec4.append(brut);
 
   status('');
 }
@@ -2312,6 +2441,10 @@ function selectTab(key, ind) {
   if (!isFeed) $('flux').textContent = '';
   if (!isPan) $('panorama').textContent = '';
   if (isPan) { $('grafic').textContent = ''; $('pager').hidden = true; }
+  // No single result set on the front door or in the entity file — four sections and a
+  // strip of figures are not a table, and a button that exported whichever one it picked
+  // would misdescribe its own file.
+  $('descarca').hidden = isPan || isDosar;
   // The file draws its charts inside its own sections and never calls render(), which is
   // what clears this. Without the line, moving from the summary to a company's file
   // leaves the summary's chart stranded above it, captioned as national spending and
@@ -2547,6 +2680,7 @@ function heroSearch() {
 if (window.matchMedia('(max-width: 640px)').matches) $('banner').open = false;
 
 $('inapoi').querySelector('button').addEventListener('click', () => selectTab('preturi'));
+$('descarca').addEventListener('click', exportCsv);
 $('pag-prev').addEventListener('click', () => turnPage(-1));
 $('pag-next').addEventListener('click', () => turnPage(1));
 $('run').addEventListener('click', heroSearch);
