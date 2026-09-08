@@ -50,7 +50,7 @@ AUTHORITY_CACHE = Path(config.ROOT) / "data" / "autoritati.parquet"
 
 These lookups are the second-largest cost in a run and the easiest to avoid paying twice.
 A real weekday holds ~8,200 acquisitions across ~2,992 distinct authorities: the in-memory
-cache already removes 64% of the calls, but the remaining 2,992 are sequential at 4 rps,
+cache already removes 64% of the calls, but the remaining 2,992 are sequential at 1.5 rps,
 which is ~12 minutes of a ~45 minute day. Persisting them means the next run pays only for
 authorities it has never seen, and a backfill that walks month after month converges on
 paying nothing at all.
