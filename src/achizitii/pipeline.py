@@ -16,7 +16,7 @@ import gzip
 import hashlib
 import json
 import logging
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -26,7 +26,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from . import config, gdpr, ocds
-from .client import SeapClient
+from .client import RateLimiter, SeapClient
 from .normalize import normalize_item
 
 log = logging.getLogger(__name__)
@@ -46,31 +46,57 @@ def daterange(start: date, end: date) -> Iterator[date]:
 
 
 AUTHORITY_CACHE = Path(config.ROOT) / "data" / "autoritati.parquet"
-"""Contracting authorities learned by previous runs.
-
-These lookups are the second-largest cost in a run and the easiest to avoid paying twice.
-A real weekday holds ~8,200 acquisitions across ~2,992 distinct authorities: the in-memory
-cache already removes 64% of the calls, but the remaining 2,992 are sequential at 1.5 rps,
-which is ~12 minutes of a ~45 minute day. Persisting them means the next run pays only for
-authorities it has never seen, and a backfill that walks month after month converges on
-paying nothing at all.
+"""Counties for contracting authorities, learned by previous runs.
 
 Safe to delete: a missing file just means the next run is cold. Delete it if an authority
-is known to have been re-registered in another county.
+is known to have moved county.
+"""
+
+AUTHORITY_CACHE_COLUMNS = ("cui", "judet", "verificat_la")
+"""The cache written by this module. A file with any other shape is ignored.
+
+The previous cache was keyed by SEAP's internal authority id and is not convertible: it
+holds no CUI, so its rows cannot be matched to anything here. Such a file is read as
+unreadable and the run starts cold, which costs one pass and nothing else.
 """
 
 
 class AuthorityResolver:
-    """Resolve contracting authority -> county.
+    """Resolve a contracting authority to a county — from ANAF, not from SEAP.
 
-    Cached twice over, because authorities repeat both within a day and across days.
+    WHY NOT SEAP
+
+    This used to call `/Entity/getCAEntityView/{id}` once per authority, which on a real
+    weekday is 2,992 requests against a service that has already IP-blocked this project
+    once and that publishes a ceiling of 500 requests per 5 minutes. Those requests bought
+    exactly one field that anything downstream reads: the county.
+
+    The authority's CUI arrives free inside the acquisition payload — `to_rows` already
+    parses it out of `contractingAuthority` — and ANAF will answer 100 CUIs in a single
+    request. So the same weekday now costs about 30 requests to a service designed for
+    bulk lookup, and none at all to the constrained one.
+
+    Checked against the archive before switching: ANAF returned a county for 100 of 100
+    contracting authorities, and 99 of those matched the county SEAP had given, once
+    diacritics, case and the "MUNICIPIUL " prefix are folded away. The single difference
+    was a registered office in one county and operations in another — a real disagreement
+    between two sources, not an error in either.
+
+    WHAT IS LOST
+
+    `city`, `fiscal_number` and `is_utility` came from the SEAP lookup and are gone.
+    Nothing read them: `fiscal_number` duplicated the CUI we already have, `is_utility`
+    was never consulted, and `localitate` was written to the Parquet schema but queried by
+    neither `publish.py` nor the site. The column stays, and is now always null.
     """
 
-    def __init__(self, client: SeapClient, cache_path: Path | None = None) -> None:
+    def __init__(self, client: SeapClient | None = None, cache_path: Path | None = None) -> None:
+        # The SEAP client is accepted and ignored: callers construct this inside a
+        # `with SeapClient()` block, and the argument keeps that call site unchanged.
         self._client = client
-        self._cache: dict[int, dict[str, Any]] = {}
+        self._cache: dict[str, str | None] = {}
         self._path = Path(cache_path) if cache_path is not None else AUTHORITY_CACHE
-        self._failed: set[int] = set()
+        self._resolved_this_run: set[str] = set()
         self._load()
 
     def _load(self) -> None:
@@ -80,69 +106,71 @@ class AuthorityResolver:
             import duckdb
 
             rows = duckdb.connect().execute(
-                "SELECT authority_id, county, city, fiscal_number, is_utility"
-                f" FROM read_parquet('{self._path}')"
+                f"SELECT cui, judet FROM read_parquet('{self._path}')"
             ).fetchall()
-        except Exception as exc:  # noqa: BLE001 - a bad cache must never stop a run
-            log.warning("authority cache unreadable (%s); starting cold", exc)
+        except Exception as exc:  # noqa: BLE001 - a bad or outdated cache must not stop a run
+            log.warning("authority cache unusable (%s); starting cold", exc)
             return
-        for aid, county, city, fiscal, utility in rows:
-            self._cache[int(aid)] = {
-                "county": county,
-                "city": city,
-                "fiscal_number": fiscal,
-                "is_utility": utility,
-            }
+        for cui, judet in rows:
+            self._cache[str(cui)] = judet
         log.info("authority cache: %d known before this run", len(self._cache))
 
-    def get(self, authority_id: int | None) -> dict[str, Any]:
-        if not authority_id:
+    def prime(self, cuis: Iterable[str | None]) -> int:
+        """Resolve every unknown CUI, 100 at a time. Returns how many were fetched.
+
+        Batching is the entire point, so this must be called before the row loop rather
+        than resolving lazily inside it.
+        """
+        from . import firme
+
+        wanted = {c for c in (firme.normalise_cui(x) for x in cuis) if c}
+        missing = sorted(wanted - self._cache.keys())
+        if not missing:
+            return 0
+
+        limiter = RateLimiter(firme.MAX_RPS)
+        today = datetime.now(UTC).date()
+        fetched = 0
+        for start in range(0, len(missing), firme.BATCH):
+            batch = missing[start : start + firme.BATCH]
+            for company in firme.fetch_batch(batch, today, limiter):
+                self._cache[company.cui] = company.judet
+                self._resolved_this_run.add(company.cui)
+                fetched += 1
+            # A code ANAF does not return is left unknown rather than cached as null:
+            # caching the absence would make one bad batch permanent, and a retry next
+            # run costs part of a single request.
+        log.info("authorities: resolved %d of %d unknown CUIs via ANAF", fetched, len(missing))
+        return fetched
+
+    def get(self, cui: str | None) -> dict[str, Any]:
+        from . import firme
+
+        key = firme.normalise_cui(cui)
+        if not key:
             return {}
-        if authority_id not in self._cache:
-            try:
-                raw = self._client.get(f"/Entity/getCAEntityView/{authority_id}")
-            except Exception as exc:  # noqa: BLE001 - a missing authority must not kill a run
-                log.warning("authority %s lookup failed: %s", authority_id, exc)
-                raw = {}
-                # Remember the failure so save() does not write it down. A cached empty
-                # row would turn one timeout into a permanently county-less authority,
-                # because nothing would ever look it up again.
-                self._failed.add(authority_id)
-            clean = gdpr.scrub(raw or {})
-            fiscal = clean.get("fiscalNumber")
-            utility = clean.get("isUtility")
-            self._cache[authority_id] = {
-                "county": clean.get("county"),
-                "city": clean.get("city"),
-                # Normalised so a value read back from the cache is indistinguishable
-                # from a freshly fetched one. Provenance must not change a type.
-                "fiscal_number": None if fiscal is None else str(fiscal),
-                "is_utility": None if utility is None else bool(utility),
-            }
-        return self._cache[authority_id]
+        judet = self._cache.get(key)
+        # `city` is kept in the shape so `to_rows` needs no special case; it is always
+        # None now. See the class docstring.
+        return {"county": judet, "city": None} if judet else {}
 
     def save(self) -> int:
-        """Write successfully resolved authorities back to the cache. Returns the count."""
-        keep = {k: v for k, v in self._cache.items() if k not in self._failed}
+        """Write resolved authorities back to the cache. Returns the number stored."""
+        keep = {k: v for k, v in self._cache.items() if v}
         if not keep:
             return 0
         import duckdb
 
         self._path.parent.mkdir(parents=True, exist_ok=True)
+        today = datetime.now(UTC).date()
         con = duckdb.connect()
-        con.execute(
-            """CREATE TABLE a (authority_id BIGINT, county VARCHAR, city VARCHAR,
-                               fiscal_number VARCHAR, is_utility BOOLEAN)"""
-        )
+        con.execute("CREATE TABLE a (cui VARCHAR, judet VARCHAR, verificat_la DATE)")
         con.executemany(
-            "INSERT INTO a VALUES (?,?,?,?,?)",
-            [
-                [k, v["county"], v["city"], v["fiscal_number"], v["is_utility"]]
-                for k, v in sorted(keep.items())
-            ],
+            "INSERT INTO a VALUES (?,?,?)",
+            [[k, v, today] for k, v in sorted(keep.items())],
         )
         con.execute(
-            f"COPY (SELECT * FROM a ORDER BY authority_id) TO '{self._path}' "
+            f"COPY (SELECT * FROM a ORDER BY cui) TO '{self._path}' "
             "(FORMAT PARQUET, COMPRESSION ZSTD)"
         )
         con.close()
@@ -362,10 +390,16 @@ def to_rows(
     details: list[dict[str, Any]], authorities: AuthorityResolver
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
+    # One pass to collect the CUIs, so they can be resolved 100 at a time. Resolving
+    # inside the loop would be one request per authority, which is the cost this exists
+    # to remove.
+    authorities.prime(
+        ocds.split_org(d.get("contractingAuthority"))[0] for d in details
+    )
     for detail in details:
         da_id = detail.get("directAcquisitionID") or detail.get("directAcquisitionId")
-        authority = authorities.get(detail.get("contractingAuthorityID"))
         ca_cui, ca_name = ocds.split_org(detail.get("contractingAuthority"))
+        authority = authorities.get(ca_cui)
         sup_cui, sup_name = ocds.split_org(detail.get("supplier"))
 
         contract_type = (detail.get("sysAcquisitionContractType") or {}).get("text")
