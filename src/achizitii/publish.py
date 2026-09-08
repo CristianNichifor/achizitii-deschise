@@ -646,6 +646,21 @@ def build(out_dir: Path | None = None, *, only: str | None = None) -> dict[str, 
             "SELECT count(*), min(CAST(data_finalizare AS DATE)), "
             "max(CAST(data_finalizare AS DATE)) FROM preturi"
         ).fetchone()
+        # The browser cannot discover these for itself. DuckDB-Wasm reads Parquet over
+        # HTTP range requests, and a glob needs a directory listing, which HTTP does not
+        # provide — verified against a real page:
+        #
+        #   read_parquet('.../preturi/**/*.parquet')  -> WebAssembly.Exception
+        #   read_parquet(['.../a.parquet', '...'])    -> OK, 22,349 rows
+        #
+        # So every file that a reader may need has to be named here. Paths are relative
+        # to PRICES_DIR and sorted, which makes them date-ordered: the file name is the
+        # day, so the browser can pick just the days a group actually spans instead of
+        # opening the whole archive.
+        manifest["preturi_arhiva"] = {
+            "baza": PRICES_DIR,
+            "fisiere": [str(p.relative_to(out / PRICES_DIR)).replace("\\", "/") for p in prices],
+        }
         manifest["preturi_unitare"] = {
             "randuri": rows,
             "zile_arhivate": len(prices),
