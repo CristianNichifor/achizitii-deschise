@@ -30,9 +30,27 @@ HEADERS = {
     "Accept-Language": "ro-RO,ro;q=0.9",
 }
 
-# Politeness. We are an unauthenticated guest on an undocumented endpoint.
-MAX_RPS = 4.0
+# Not politeness any more. SEAP published its thresholds on 2026-07-15.
+MAX_RPS = 1.5
 """Requests per second, per client. DO NOT RAISE WITHOUT READING THIS.
+
+THE LIMIT IS PUBLISHED, AND WE WERE OVER IT
+
+SEAP states the thresholds that trigger a block on anonymous access:
+
+    500 accesses in 5 minutes from one IP   ->  1.67 requests/second sustained
+     50 accesses in 1 second                ->  burst ceiling
+
+4.0 rps is 1,200 requests per 5 minutes: 2.4x the published limit. That was not a
+cautious setting that happened to get unlucky, it was over the line the whole time, and
+this comment used to describe it as "far below what drew the block" — true, and beside
+the point. 1.5 leaves headroom under 1.67 for retries and the odd burst.
+
+The same announcement says that parallel queries, repeated requests at very short
+intervals, and continuous automated processes over long periods are all discouraged, and
+that anyone needing high-volume or recurring programmatic access should ask their support
+team rather than arrange it themselves. A multi-month crawl is exactly the thing that
+paragraph is about, whatever rate it runs at. Ask; do not tune.
 
 This was briefly set to 40, with 16 concurrent workers, because a burst test showed 37
 records a second with zero errors and flat latency. That reasoning was wrong. "The
@@ -47,9 +65,10 @@ An IP-level block, lifted only by contacting their support. The cost of being wr
 is not a slow job — it is losing the only source of line-item prices that exists, for
 everyone sharing that address.
 
-4.0 with two workers is roughly 8 records a second: a little over twice the original
-3.0, and far below what drew the block. If more throughput is genuinely needed, ask SEAP
-for it rather than measuring how much they tolerate before objecting."""
+If more throughput is genuinely needed, ask SEAP for it rather than measuring how much
+they tolerate before objecting. Measuring is what produced the block: a burst test showed
+37 records a second with flat latency, which said only that the server answers quickly,
+never that it consented."""
 TIMEOUT = 45.0
 RETRIES = 4
 
