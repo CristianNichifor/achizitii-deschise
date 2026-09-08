@@ -77,3 +77,34 @@ def test_romanian_row_counts_agree_with_the_number(source: str) -> None:
     assert "last >= 20" in body, "the 'de' form above twenty is part of the rule"
     # And it must actually be used, not merely defined.
     assert "randuri(table.numRows)" in source
+
+
+def test_filter_visibility_is_derived_not_remembered(source: str) -> None:
+    """Two hand-written lists decided which filters to show, and both had drifted.
+
+    One named the yearless views, one named the views without a group size. Neither was
+    updated when `entitate` and `detaliu` were added, so `entitate` offered a year filter
+    and an n-minimum its SQL ignores, and `detaliu` offered a year filter. A control that
+    looks like it works and does nothing is the fault this page already fixed once for the
+    search box.
+
+    The view is now asked rather than remembered: its SQL is built with marked values and
+    the surviving markers say which filters it honours. Verified in a browser across all
+    tabs, all four entity aspects, all eight signals and the drill-down.
+    """
+    assert "function controlsFor(" in source
+    assert "CONTROL_PROBE" in source
+    assert "uses.an ? '' : 'none'" in source
+    assert "uses.minn ? '' : 'none'" in source
+    # The lists must be gone, not merely bypassed.
+    assert "const yearless =" not in source, "the hand-written yearless list is back"
+    assert "key === 'ruti' || key === 'firme'" not in source, (
+        "the hand-written n-minimum list is back"
+    )
+
+
+def test_a_view_whose_sql_cannot_be_probed_keeps_its_controls(source: str) -> None:
+    """Hiding a working filter is worse than showing a redundant one, so the fallback
+    shows both."""
+    body = source.split("function controlsFor(")[1][:900]
+    assert "return { an: true, minn: true };" in body
