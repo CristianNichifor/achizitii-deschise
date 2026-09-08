@@ -65,6 +65,24 @@
   footer { margin-top:2.5rem; padding-top:1rem; border-top:1px solid var(--line);
            color:var(--muted); font-size:.8rem; }
   a { color:var(--accent); }
+
+  /* Boot state. Measured on fast broadband, the page spends 4.1s showing a single
+     unchanging line before anything happens, and longer on a phone. A frozen sentence
+     reads as a broken page, so the wait gets a spinner, a reason and a stage count. */
+  .tabs button:disabled { opacity:.4; cursor:not-allowed; }
+  .boot { display:flex; align-items:center; gap:.5rem; }
+  .boot::before { content:""; flex:none; width:.85rem; height:.85rem; border-radius:50%;
+        border:2px solid var(--line); border-top-color:var(--accent);
+        animation:spin .7s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .skeleton span { display:block; height:.7rem; border-radius:4px; background:var(--sub);
+        background-image:linear-gradient(90deg,var(--sub),var(--line),var(--sub));
+        background-size:200% 100%; animation:sk 1.3s ease-in-out infinite; }
+  @keyframes sk { 0% { background-position:200% 0; } 100% { background-position:-200% 0; } }
+  /* Vestibular safety: the spinner and shimmer are decoration, never the message. */
+  @media (prefers-reduced-motion: reduce) {
+    .boot::before, .skeleton span { animation:none; }
+  }
 </style>
 </head>
 <body>
@@ -109,7 +127,9 @@
     </div>
   </div>
 
-  <p id="status">Se încarcă DuckDB-Wasm…</p>
+  <!-- Matches the first booting() call, so the line does not change wording between
+       the server-rendered HTML and the moment the module takes over. -->
+  <p id="status" class="boot">Se pregătește…</p>
   <p id="note"></p>
   <div class="wrap"><table id="out"><thead></thead><tbody></tbody></table></div>
 
@@ -131,7 +151,22 @@
 import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0/+esm';
 
 const $ = (id) => document.getElementById(id);
-const status = (m) => { $('status').textContent = m; };
+const status = (m) => { $('status').className = ''; $('status').textContent = m; };
+
+// Boot is a distinct state, not just another status line. Until the engine is up there
+// is nothing to query, so the tabs are disabled: previously a click during those seconds
+// ran selectTab, which overwrote the loading message and left an empty table with no sign
+// that anything was still happening. The page looked broken precisely when it was busiest.
+let ready = false;
+const booting = (m) => { $('status').className = 'boot'; $('status').textContent = m; };
+
+// Placeholder rows, so the table area reads as "filling in" rather than "empty".
+// Deliberately the same shape as a real result: seven columns, six rows.
+function skeleton() {
+  $('out').tHead.innerHTML = '';
+  $('out').tBodies[0].innerHTML = Array.from({ length: 6 }, () =>
+    '<tr class="skeleton">' + '<td><span></span></td>'.repeat(7) + '</tr>').join('');
+}
 const url = (f) => new URL(`data/${f}`, location.href).href;
 const lit = (s) => `'${String(s).replace(/'/g, "''")}'`;
 
@@ -542,6 +577,10 @@ async function run() {
 }
 
 function selectTab(key, ind) {
+  // Disabling the tab buttons is not enough on its own: the signal dropdown also calls
+  // this, and it is not a button. Without the guard, changing it mid-boot would wipe the
+  // loading message.
+  if (!ready) return;
   current = key;
   indicator = ind || null;
   for (const b of $('tabs').children) b.setAttribute('aria-selected', String(b.dataset.key === key));
@@ -582,6 +621,8 @@ function selectTab(key, ind) {
 }
 
 (async () => {
+  skeleton();
+  booting('Se pregătește…');
   try {
     manifest = await (await fetch(url('manifest.json'))).json();
   } catch {
@@ -621,6 +662,7 @@ function selectTab(key, ind) {
         && !(manifest.datasets || []).some((d) => d.name === 'judete_an')) continue;
     const b = document.createElement('button');
     b.textContent = v.label; b.dataset.key = key; b.role = 'tab';
+    b.disabled = true;  // enabled once the engine is up; see the boot block below
     b.onclick = () => selectTab(key);
     $('tabs').append(b);
   }
@@ -637,6 +679,7 @@ function selectTab(key, ind) {
     const b = document.createElement('button');
     b.textContent = `Semnale (${semnale.length})`;
     b.dataset.key = 'indicatori'; b.role = 'tab';
+    b.disabled = true;
     b.onclick = () => selectTab('indicatori', semnale[$('semnal').selectedIndex] || semnale[0]);
     $('tabs').append(b);
     $('semnal').addEventListener('change', () => {
@@ -645,15 +688,26 @@ function selectTab(key, ind) {
   }
 
   try {
+    // Staged, because the alternative is one sentence sitting still for seconds. The
+    // stage boundaries are placed where the time actually goes, measured cold: bundle
+    // selection is ~170ms, instantiate is ~7.5s. Putting the size on the fast stage
+    // would be a progress bar that lies.
+    //
+    // The browser caches the engine, so this is paid once rather than per visit. Worth
+    // saying out loud: a visitor who believes every page view costs 4 MB leaves.
+    booting('Se pregătește motorul…');
     const bundle = await duckdb.selectBundle(duckdb.getJsDelivrBundles());
     const worker = await duckdb.createWorker(bundle.mainWorker);
+    booting('Se descarcă baza de date (~4 MB, o singură dată — apoi rămâne în browser)…');
     const db = new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger(duckdb.LogLevel.WARNING), worker);
     await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
     conn = await db.connect();
     // Range requests let DuckDB read only the row groups a query needs, so the browser
     // never downloads a whole file to answer a filtered question.
     await conn.query('SET enable_http_metadata_cache = true; SET http_keep_alive = true;');
+    ready = true;
     $('run').disabled = false;
+    for (const b of $('tabs').children) b.disabled = false;
     selectTab('sumar');
   } catch (err) {
     status(`Eroare la inițializare: ${err.message}. Servește folderul prin HTTP (nu file://).`);
