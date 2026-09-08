@@ -145,7 +145,9 @@ def test_the_group_size_control_is_connected(source: str) -> None:
     """It had no listener at all. Typing a group size did nothing until the reader
     happened to press Caută, so on the views with no search box — the summary, contracts —
     it simply looked broken. Measured in a browser: prices went 200 rows to 195."""
-    assert "$('minn').addEventListener('change', run);" in source
+    # Through rerun(), which resets the page first: changing the group size changes the
+    # result set, and page 4 of the old one is not page 4 of the new one.
+    assert "$('minn').addEventListener('change', rerun);" in source
 
 
 def test_the_reader_is_told_the_link_exists(source: str) -> None:

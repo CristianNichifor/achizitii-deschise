@@ -52,7 +52,7 @@ def test_a_chart_is_drawn_from_the_rows_already_on_screen(source: str) -> None:
 
 def test_the_chart_and_its_table_are_the_same_rows(source: str) -> None:
     """render() draws both from one Arrow table, and the file's sections do the same."""
-    assert "const fig = chartFor(VIEWS[current] && VIEWS[current].chart, table);" in source
+    assert "const fig = chartFor(VIEWS[current] && VIEWS[current].chart, table, size);" in source
     assert "const fig = chartFor(s.chart, t);" in source
 
 
@@ -164,16 +164,20 @@ def test_the_hover_target_is_the_whole_column(source: str) -> None:
 def test_no_value_is_reachable_only_by_hovering(source: str) -> None:
     """A tooltip enhances; it never gates. Every figure in every chart is also a row in
     the table immediately below it."""
-    assert "const fig = chartFor(VIEWS[current] && VIEWS[current].chart, table);" in source
+    assert "const fig = chartFor(VIEWS[current] && VIEWS[current].chart, table, size);" in source
     # drawn above the table, and the table is always rendered too
     assert "fillTable($('out'), table" in source
+    # The same row window for both, so the chart cannot include a row the table omits.
+    # The query fetches one row MORE than the page shows, to answer "is there a next
+    # page"; that probe row must reach neither.
+    assert "maxRows: size," in source
 
 
 def test_leaving_a_view_does_not_strand_its_chart(source: str) -> None:
     """The entity file draws charts inside its own sections and never calls render(),
     which is what clears this. Without the line, moving from the summary to a company's
     file left the national spending chart above it, under that company's name."""
-    assert "if (isDosar) $('grafic').textContent = '';" in source
+    assert "if (isDosar) { $('grafic').textContent = ''; $('pager').hidden = true; }" in source
     assert "$('grafic').textContent = '';" in _body(source, "function render(table) {", 300)
 
 
