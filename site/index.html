@@ -88,6 +88,81 @@
   #inapoi button { cursor:pointer; color:var(--accent); background:none; border:none;
                    padding:0; font-weight:600; }
   tbody tr:last-child td { border-bottom:none; }
+  /* Charts.
+     ---------------------------------------------------------------------------
+     The site had none. Eight tabs, eight tables — and the first question anyone asks
+     of a spending series ("is it going up?") took reading eleven numbers off a grid.
+
+     Built as HTML columns rather than SVG on purpose. An SVG sized by viewBox scales
+     its text with the drawing, so an 11px label becomes 5px on a 320px phone; sized in
+     real pixels it needs a resize observer and a re-render. Divs are responsive for
+     free, their labels are real text at real sizes, and they are selectable and
+     searchable like the rest of the page.
+
+     Colours come from the validated categorical palette, checked with the skill's own
+     validator against THIS page's surfaces (#fff light, #0e1216 dark) rather than the
+     reference ones, all-pairs, in both modes:
+
+       CVD separation      worst 9.2 light / 9.4 dark   (>= 8 target)
+       Normal-vision       worst 24.0 light / 20.9 dark (>= 15 floor)
+       Contrast vs surface #1baf7a at 2.82:1 on white -> below 3:1
+
+     That last one is a documented relief, not a pass: it is legal only with visible
+     labels or a table view. Both are present — the legend names every series and the
+     full table sits directly beneath the chart — so identity never rests on colour. */
+  .viz {
+    --serie-1: #2a78d6; --serie-2: #eb6834; --serie-3: #1baf7a;
+    margin: .2rem 0 1.1rem;
+  }
+  @media (prefers-color-scheme: dark) {
+    /* Selected for the dark surface, not flipped: the same three hues re-stepped and
+       re-validated against #0e1216, where all three clear 3:1. */
+    .viz { --serie-1: #3987e5; --serie-2: #d95926; --serie-3: #199e70; }
+  }
+  .viz figcaption { font-size:.78rem; color:var(--muted); margin:0 0 .45rem; }
+  /* The plot holds bars and NOTHING else, and the x labels live in their own row below.
+     They started out inside the column, and that silently broke the geometry: a bar's
+     height is a percentage of its column, so a label sharing that column ate into the
+     100%, flex clamped the tallest bars, and three different years drew the same height —
+     2025, the largest, drew SHORTER than 2018. A chart that misreports which year is
+     biggest is worse than no chart.
+     content-box so the padding is headroom for the peak label rather than being taken
+     out of the track; the global border-box would fold it into the 132px. */
+  .viz .plot { display:flex; align-items:flex-end; gap:2px; height:132px;
+               box-sizing:content-box; padding-top:1rem;
+               border-bottom:1px solid var(--line); }
+  .viz .col { position:relative; flex:1 1 0; min-width:0; height:100%;
+              display:flex; align-items:flex-end; }
+  .viz .xrow { display:flex; gap:2px; margin-top:.3rem; }
+  .viz .xrow span { flex:1 1 0; min-width:0; }
+  /* Capped at 24px so a chart of three years does not become three slabs; the band's
+     leftover is air. The 2px gaps between stacked segments are the SURFACE showing
+     through, which is why the bar itself is transparent — a stroke around each segment
+     would add ink that is not data. */
+  .viz .bar { width:100%; max-width:24px; margin:0 auto; background:transparent;
+              display:flex; flex-direction:column-reverse;
+              border-radius:4px 4px 0 0; overflow:hidden; }
+  .viz .seg { display:block; width:100%; }
+  .viz .seg + .seg { margin-bottom:2px; }
+  .viz .s1 { background:var(--serie-1); }
+  .viz .s2 { background:var(--serie-2); }
+  .viz .s3 { background:var(--serie-3); }
+  /* A year still in progress is not comparable with the ten before it. Shown, because
+     hiding it would be worse, but visibly not a finished bar. */
+  .viz .col.partial .seg { opacity:.45; }
+  .viz .xlab { font-size:.68rem; color:var(--muted); text-align:center; display:block;
+               font-variant-numeric:tabular-nums; }
+  .viz .xlab.partial { font-style:italic; }
+  /* Rides just above the bar it labels, in the headroom the plot's padding reserves.
+     Absolutely positioned so it cannot take height from the track. */
+  .viz .top { position:absolute; left:-50%; right:-50%; text-align:center; line-height:1;
+              font-size:.68rem; color:var(--ink); font-weight:600; white-space:nowrap; }
+  .viz .legend { display:flex; flex-wrap:wrap; gap:.15rem .9rem; margin:.5rem 0 0;
+                 padding:0; list-style:none; font-size:.75rem; color:var(--muted); }
+  .viz .legend li { display:flex; align-items:center; gap:.35rem; }
+  /* The swatch carries identity; the text stays in ink. A light categorical hue is
+     illegible as label text on white. */
+  .viz .legend i { width:.7rem; height:.7rem; border-radius:2px; flex:none; }
   /* The entity file. One organisation, every table that mentions it, in the order a
      reader actually asks: who is this, what does it buy, what does it sell, what has
      been flagged. Each section keeps its own table rather than being forced into one
@@ -102,10 +177,10 @@
                border-radius:8px; padding:.55rem .7rem; }
   .fapte dt { font-size:.7rem; text-transform:uppercase; letter-spacing:.04em;
               color:var(--muted); margin:0; }
-  .fapte dd { margin:.15rem 0 0; font-size:1.05rem; font-weight:600;
-              font-variant-numeric:tabular-nums; }
-  .fapte dd small { font-weight:400; color:var(--muted); font-size:.75rem; display:block;
-                    font-variant-numeric:normal; }
+  /* Proportional figures, not tabular: these are standalone values, not a column that
+     has to align vertically, and equal-width digits read loose at this size. */
+  .fapte dd { margin:.15rem 0 0; font-size:1.05rem; font-weight:600; }
+  .fapte dd small { font-weight:400; color:var(--muted); font-size:.75rem; display:block; }
   .sect { margin:1.4rem 0 0; }
   .sect > h3 { font-size:.8rem; text-transform:uppercase; letter-spacing:.05em;
                color:var(--muted); margin:0 0 .45rem; font-weight:600; }
@@ -198,6 +273,11 @@
     .tbl tr.skeleton td::before { content:none; }
     .controls select, .controls input { width:100%; }
     h1 { font-size:1.35rem; }
+
+    .viz .plot { height:104px; }
+    /* Eleven "2016"s do not fit across 320px. Counted from the END so the most recent
+       year is always the one kept. */
+    .viz .xrow span:nth-last-child(even) { visibility:hidden; }
   }
 </style>
 </head>
@@ -265,6 +345,8 @@
        sales and signals have four different sets of columns. -->
   <div id="dosar-cap" hidden></div>
   <div id="dosar"></div>
+  <!-- Drawn from the rows already in the table below, so the two cannot disagree. -->
+  <div id="grafic"></div>
   <div class="wrap" id="wrap-out"><table id="out" class="tbl"><thead></thead><tbody></tbody></table></div>
 
   <!-- The address bar now carries the whole view, but it changes silently and nobody
@@ -418,6 +500,8 @@ const VIEWS = {
     label: 'Sumar',
     search: null,
     money: ['valoare_totala_ron', 'mediana_ron'],
+    chart: { x: 'an', y: 'valoare_totala_ron', series: 'categorie',
+             titlu: 'Valoarea achizițiilor directe pe an, după categorie' },
     note: 'Totalurile exclud valorile peste plafonul legal al anului — coloana ' +
           '„excluse peste plafon" arată câte.',
     sql: (f) => `
@@ -736,6 +820,7 @@ const DOSAR = [
     id: 'cumparator',
     titlu: 'Ca autoritate contractantă — ce cumpără',
     gol: 'Nu apare ca autoritate contractantă în datele publicate.',
+    chart: { x: 'an', y: 'valoare_totala_ron', titlu: 'Cât a cumpărat, pe an' },
     sql: (m) => `
       SELECT an, autoritate, autoritate_cui, n,
              round(valoare_totala_ron) AS valoare_totala_ron, furnizori_distincti
@@ -748,6 +833,7 @@ const DOSAR = [
     id: 'furnizor',
     titlu: 'Ca furnizor — ce vinde statului',
     gol: 'Nu apare ca furnizor în datele publicate.',
+    chart: { x: 'an', y: 'valoare_totala_ron', titlu: 'Cât a vândut, pe an' },
     sql: (m) => `
       SELECT an, furnizor, furnizor_cui, n,
              round(valoare_totala_ron) AS valoare_totala_ron, autoritati_distincte
@@ -920,6 +1006,143 @@ function buildSql() {
   return deflate(VIEWS[current].sql(filters()), VIEWS[current]);
 }
 
+// ---------------------------------------------------------------------------
+// One Arrow table into one column chart.
+//
+// Built from the rows the view has ALREADY fetched, never from a query of its own. That
+// is the property worth protecting: whatever the reader filters, the chart and the table
+// underneath it cannot disagree, because they are the same rows drawn twice.
+//
+// Returns null when there is nothing worth drawing — one column is not a trend, and a
+// chart of a single bar takes space to say less than the row below it does.
+function chartFor(spec, table) {
+  if (!spec || !table || !table.numRows) return null;
+  const rows = table.toArray();
+  const xs = [];                        // distinct x values, in first-seen order
+  const bySeries = new Map();           // series label -> Map(x -> total)
+  for (const r of rows) {
+    const x = r[spec.x];
+    if (x === null || x === undefined) continue;
+    const key = String(x);
+    if (!xs.includes(key)) xs.push(key);
+    const name = spec.series ? String(r[spec.series] ?? '—') : '';
+    if (!bySeries.has(name)) bySeries.set(name, new Map());
+    const m = bySeries.get(name);
+    m.set(key, (m.get(key) || 0) + Number(r[spec.y] || 0));
+  }
+  // Sorted numerically where the axis is numeric — an Arrow table ordered "an DESC"
+  // would otherwise draw time running backwards.
+  xs.sort((a, z) => (Number(a) - Number(z)) || a.localeCompare(z));
+
+  // A series carrying no value at all is not a series. The summary has a fourth
+  // `categorie` — 26 rows across eight years whose category is NULL and whose
+  // n_valori_folosite is 0 — which is real data and stays in the table, but drawing it
+  // would add a legend entry and a colour for a permanently invisible bar, and it pushed
+  // the chart over the three-series cap so nothing was drawn at all.
+  const names = [...bySeries.keys()]
+    .filter((n) => [...bySeries.get(n).values()].some((v) => Number(v) > 0));
+  if (xs.length < 2 || !names.length || names.length > 3) return null;
+
+  const totals = xs.map((x) => names.reduce((a, n) => a + (bySeries.get(n).get(x) || 0), 0));
+  const max = Math.max(...totals);
+  if (!(max > 0)) return null;
+
+  // The current calendar year is still being collected, so its column is not comparable
+  // with the ten finished ones beside it. Compared against the clock rather than against
+  // the data: if the archive stops being updated, the last year present is complete and
+  // must stop being marked as though it were not.
+  const inProgress = String(new Date().getFullYear());
+
+  const fig = document.createElement('figure');
+  fig.className = 'viz';
+  const cap = document.createElement('figcaption');
+  cap.textContent = spec.titlu;
+  fig.append(cap);
+
+  // No y-axis and no gridlines. The only tick worth drawing is the maximum, and the
+  // tallest column already carries it as a direct label — printing `ron(max)` in a
+  // corner as well is the same number twice, which is ink that is not data. Every other
+  // value is one hover away, and all of them are in the table below.
+
+  const plot = document.createElement('div');
+  plot.className = 'plot';
+  const xrow = document.createElement('div');
+  xrow.className = 'xrow';
+  const peak = totals.indexOf(max);
+  xs.forEach((x, i) => {
+    const col = document.createElement('div');
+    col.className = 'col' + (x === inProgress ? ' partial' : '');
+    const pct = (totals[i] / max) * 100;
+    // Direct-labelled selectively: the tallest column only. A number on every column is
+    // a table with extra steps, and the table is already below.
+    if (i === peak) {
+      const top = document.createElement('span');
+      top.className = 'top';
+      top.textContent = `${ron(totals[i])} RON`;
+      top.style.bottom = `calc(${pct}% + 3px)`;
+      col.append(top);
+    }
+    const bar = document.createElement('div');
+    bar.className = 'bar';
+    bar.style.height = `${pct}%`;
+    // Every value the chart holds, on hover — the layer that lets the direct labels stay
+    // sparse. `title` rather than a custom tooltip: the page already uses it for the
+    // exact figure behind an abbreviated one, so hovering means the same thing here.
+    //
+    // On the COLUMN, not the bar. A bar's height is its value, so 2016 would be a 24x33px
+    // target you have to land on; the column is the full height of the plot. Nothing is
+    // gated behind it either way — every value is in the table below.
+    col.title = names
+      .map((n) => `${n ? n + ': ' : ''}${ron(bySeries.get(n).get(x) || 0)} RON`)
+      .concat(names.length > 1 ? [`total: ${ron(totals[i])} RON`] : [])
+      .concat(x === inProgress ? ['an în curs — incomplet'] : [])
+      .join('\n');
+    names.forEach((n, si) => {
+      const v = bySeries.get(n).get(x) || 0;
+      if (!v) return;
+      const seg = document.createElement('span');
+      seg.className = `seg s${(si % 3) + 1}`;
+      seg.style.height = `${(v / totals[i]) * 100}%`;
+      bar.append(seg);
+    });
+    col.append(bar);
+    plot.append(col);
+    // Its own row, outside the track — see the .plot comment.
+    const lab = document.createElement('span');
+    lab.className = 'xlab' + (x === inProgress ? ' partial' : '');
+    lab.textContent = x;
+    xrow.append(lab);
+  });
+  fig.append(plot, xrow);
+
+  // A legend for two or more series, always. Identity must never rest on colour alone —
+  // and one of these three sits below 3:1 against white, so this is the relief the
+  // palette check requires, together with the table underneath.
+  if (names.length > 1) {
+    const ul = document.createElement('ul');
+    ul.className = 'legend';
+    names.forEach((n, si) => {
+      const li = document.createElement('li');
+      const sw = document.createElement('i');
+      sw.style.background = `var(--serie-${(si % 3) + 1})`;
+      li.append(sw, document.createTextNode(n));
+      ul.append(li);
+    });
+    if (xs.includes(inProgress)) {
+      const li = document.createElement('li');
+      li.textContent = `${inProgress} — an în curs, incomplet`;
+      ul.append(li);
+    }
+    fig.append(ul);
+  } else if (xs.includes(inProgress)) {
+    const p = document.createElement('p');
+    p.className = 'legend';
+    p.textContent = `${inProgress} — an în curs, incomplet`;
+    fig.append(p);
+  }
+  return fig;
+}
+
 // One Arrow table into one HTML table. Split out of render() because the entity file
 // draws four of these, and every rule about how a value is shown — money abbreviated,
 // dates decoded from epoch milliseconds, a year not given thousands separators, the
@@ -989,6 +1212,7 @@ function fillTable(el, table, { onRow = null } = {}) {
 function render(table) {
   const head = $('out').tHead, body = $('out').tBodies[0];
   head.innerHTML = ''; body.innerHTML = '';
+  $('grafic').textContent = '';
   if (!table.numRows) {
     status('Niciun rezultat. Relaxați filtrele.');
     // "No results" is the wrong answer when the name is simply on the other side of the
@@ -998,6 +1222,8 @@ function render(table) {
     if (VIEWS[current] && VIEWS[current].group === ENTITY_GROUP) suggestOtherAspect();
     return;
   }
+  const fig = chartFor(VIEWS[current] && VIEWS[current].chart, table);
+  if (fig) $('grafic').append(fig);
   fillTable($('out'), table, {
     onRow: current !== 'preturi' ? null : (row) => ({
       title: 'Vezi achizițiile din spatele acestei mediane',
@@ -1393,6 +1619,8 @@ async function runDosar() {
       p.textContent = s.gol;
       box.append(p);
     } else {
+      const fig = chartFor(s.chart, t);
+      if (fig) box.append(fig);
       const w = document.createElement('div');
       w.className = 'wrap';
       const tbl = document.createElement('table');
@@ -1459,6 +1687,11 @@ function selectTab(key, ind) {
   // the previous view's 200 rows below a company profile would read as part of it.
   const isDosar = key === 'dosar';
   $('wrap-out').hidden = isDosar;
+  // The file draws its charts inside its own sections and never calls render(), which is
+  // what clears this. Without the line, moving from the summary to a company's file
+  // leaves the summary's chart stranded above it, captioned as national spending and
+  // sitting under that company's name.
+  if (isDosar) $('grafic').textContent = '';
   if (!isDosar) {
     $('dosar').textContent = '';
     $('dosar-cap').textContent = '';
