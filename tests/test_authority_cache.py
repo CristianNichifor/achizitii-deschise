@@ -2,7 +2,7 @@
 
 Authority lookups are the second-largest cost in a run: a real weekday holds ~8,200
 acquisitions across ~2,992 distinct authorities, and those 2,992 calls are sequential at
-4 rps — roughly 12 minutes of a ~45 minute day. Persisting them across runs is worth real
+1.5 rps — roughly a third of a day's requests. Persisting them across runs is worth real
 time on the backfill, which is why these tests exist at all.
 
 The risk that comes with persistence is that a *failure* gets written down. A cached empty
