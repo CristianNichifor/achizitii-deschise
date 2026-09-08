@@ -626,6 +626,85 @@ UNIT_PRICE_DATASETS = (
 )
 
 
+# The front door, precomputed.
+#
+# Measured against the published site: rendering it cost **4.67 MB**, of which 3.32 MB was
+# `autoritati_an.parquet` — essentially the entire file, fetched as one 200 and seven 206
+# ranges, to display SIX ROWS. Range requests cannot help, and that is the point worth
+# understanding rather than optimising around: the query is `GROUP BY autoritate_cui` over
+# all 155,521 rows, so it genuinely needs every one of them. The only way to not download a
+# table is to not aggregate it in the browser.
+#
+# So the six rows are computed here, once, at publish time. The front door is a fixed
+# summary — it takes no filters and never varies — which is exactly the shape that belongs
+# in a file rather than in a query.
+#
+# THE RISK, AND WHAT REMOVES IT. A precomputed summary is a second source of truth, and the
+# front door's whole claim is that every figure on it is the same figure as the tab it links
+# to. These read the PUBLISHED parquet files, not the underlying view, so they aggregate the
+# identical rows the tabs read — including the same per-year rounding, which aggregating
+# `ad` directly would silently change. A test asserts the files equal the live query.
+PANORAMA_DATASETS = (
+    Dataset(
+        name="panorama_cumparatori",
+        description=(
+            "The six largest buyers, precomputed for the front door so it does not "
+            "aggregate a 3.3 MB table in the browser to show six rows."
+        ),
+        sql="""
+        SELECT autoritate_cui,
+               any_value(autoritate)                    AS autoritate,
+               sum(n)::BIGINT                           AS n,
+               round(sum(valoare_totala_ron))           AS valoare_totala_ron
+        FROM pub_autoritati_an
+        WHERE autoritate_cui IS NOT NULL AND autoritate_cui <> ''
+        GROUP BY autoritate_cui
+        ORDER BY valoare_totala_ron DESC NULLS LAST
+        LIMIT 6
+        """,
+    ),
+    Dataset(
+        name="panorama_preturi",
+        description=(
+            "The six widest unit-price spreads, precomputed for the front door. Carries "
+            "cpv, pack size and the date window because the row opens a drill-down."
+        ),
+        sql=f"""
+        SELECT denumire_key, um, n,
+               round(p90_ron / nullif(p10_ron, 0), 1)   AS de_cate_ori,
+               p10_ron, mediana_ron, p90_ron,
+               cpv, marime_pachet, din, pana_la
+        FROM pub_preturi_unitare
+        WHERE n >= {MIN_GROUP_FOR_MEDIAN} AND p10_ron > 0
+        ORDER BY de_cate_ori DESC NULLS LAST
+        LIMIT 6
+        """,
+    ),
+)
+
+
+def _panorama(con: duckdb.DuckDBPyConnection, out: Path) -> list[dict[str, object]]:
+    """Build the front-door files from what was just published.
+
+    Reads the written Parquet rather than the source views, so the numbers cannot drift
+    from the tables the front door links to. Runs in both modes: the price spreads change
+    on every daily run, and the buyers are cheap enough that rebuilding them costs nothing
+    and keeps the two files consistent with each other.
+    """
+    built: list[dict[str, object]] = []
+    for name, view in (("autoritati_an", "pub_autoritati_an"),
+                       ("preturi_unitare", "pub_preturi_unitare")):
+        src = out / f"{name}.parquet"
+        if not src.is_file():
+            return built     # nothing to summarise; the front door falls back to querying
+        con.execute(
+            f"CREATE OR REPLACE VIEW {view} AS SELECT * FROM read_parquet('{src}')"
+        )
+    for d in PANORAMA_DATASETS:
+        built.append(_write(con, d, out))
+    return built
+
+
 def build(out_dir: Path | None = None, *, only: str | None = None) -> dict[str, object]:
     """Write the published bundle and return its manifest.
 
@@ -830,6 +909,15 @@ def build(out_dir: Path | None = None, *, only: str | None = None) -> dict[str, 
                 "prezența aici nu spune nimic despre vreun contract."
             ),
         }
+
+    # The front door's precomputed files, built from what was just written. Stale entries
+    # are dropped first: a prices-only run merges into an existing manifest and would
+    # otherwise list each of them twice.
+    pan_names = {d.name for d in PANORAMA_DATASETS}
+    manifest["datasets"] = [
+        d for d in manifest.get("datasets", []) if d["name"] not in pan_names
+    ]
+    manifest["datasets"] += _panorama(con, out)
 
     # Coverage and the exclusion count, so a reader can see what was left out. The
     # `ad` view only exists when the bulk archive was registered; in prices-only mode

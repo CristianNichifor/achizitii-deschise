@@ -436,3 +436,60 @@ def test_a_group_without_a_unit_keeps_its_principal_cpv() -> None:
     rows = con.execute(f"SELECT cpv_principal FROM ({produs.sql})").fetchall()
     assert rows == [("79000000-4",)], f"a unit-less group lost its code: {rows}"
     con.close()
+
+
+def test_the_front_door_files_match_the_query_they_replace() -> None:
+    """The front door's whole claim is that every figure on it is the same figure as the
+    tab it links to. A precomputed summary is a second source of truth, and this is what
+    stops it becoming a divergent one.
+
+    They read the PUBLISHED Parquet rather than the underlying view — which matters more
+    than it looks. `autoritati_an.valoare_totala_ron` is already rounded per year, so
+    summing those rounded figures is not the same number as rounding a sum of the raw
+    values. Aggregating `ad` directly here would produce a front door that disagreed with
+    its own table by a few lei, for no visible reason.
+    """
+    import duckdb
+
+    out = Path("site/data")
+    for name in ("autoritati_an.parquet", "preturi_unitare.parquet"):
+        if not (out / name).is_file():
+            pytest.skip(f"{name} not published in this checkout")
+
+    con = duckdb.connect()
+    con.execute(
+        "CREATE VIEW pub_autoritati_an AS SELECT * FROM "
+        f"read_parquet('{out / 'autoritati_an.parquet'}')"
+    )
+    con.execute(
+        "CREATE VIEW pub_preturi_unitare AS SELECT * FROM "
+        f"read_parquet('{out / 'preturi_unitare.parquet'}')"
+    )
+    from achizitii.publish import PANORAMA_DATASETS
+
+    for d in PANORAMA_DATASETS:
+        target = out / f"{d.name}.parquet"
+        if not target.is_file():
+            pytest.skip(f"{d.name} not published in this checkout")
+        live = con.execute(d.sql).fetchall()
+        stored = con.execute(f"SELECT * FROM read_parquet('{target}')").fetchall()
+        assert stored == live, (
+            f"{d.name} on disk differs from the query it stands in for — the front door "
+            "would show different numbers from the tab it links to"
+        )
+    con.close()
+
+
+def test_the_front_door_files_are_small_enough_to_be_worth_it() -> None:
+    """The point of them. Rendering the front door pulled 3.32 MB of autoritati_an and
+    0.48 MB of preturi_unitare — essentially both files in full, to show six rows each,
+    because `GROUP BY` over every row cannot be served by a range request."""
+    out = Path("site/data")
+    for name in ("panorama_cumparatori", "panorama_preturi"):
+        f = out / f"{name}.parquet"
+        if not f.is_file():
+            pytest.skip(f"{name} not published in this checkout")
+        assert f.stat().st_size < 20_000, (
+            f"{name} is {f.stat().st_size:,} bytes; if it grows to the size of the table "
+            "it summarises it has stopped being worth its own existence"
+        )
