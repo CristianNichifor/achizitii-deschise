@@ -187,6 +187,17 @@
   /* An empty section is an ANSWER — "this company never sells to the state" is worth
      knowing — so it says so rather than disappearing. */
   .sect .gol { color:var(--muted); font-size:.85rem; margin:0; }
+  /* A sortable header has to look pressable, or nobody presses it. */
+  th.sortable { cursor:pointer; user-select:none; }
+  th.sortable:hover, th.sortable:focus-visible { color:var(--accent); }
+  th.sorted { color:var(--accent); }
+  .pager { display:flex; align-items:center; gap:.75rem; margin:.8rem 0 0;
+           flex-wrap:wrap; }
+  .pager[hidden] { display:none; }
+  .pager button { cursor:pointer; font-size:.82rem; padding:.35rem .7rem;
+                  color:var(--accent); }
+  .pager button:disabled { opacity:.4; cursor:default; color:var(--muted); }
+  #pag-info { color:var(--muted); font-size:.82rem; font-variant-numeric:tabular-nums; }
   .share { margin:.8rem 0 0; display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; }
   .share button { cursor:pointer; font-size:.82rem; padding:.3rem .6rem; color:var(--accent); }
   #copiat { color:var(--muted); font-size:.8rem; }
@@ -349,6 +360,12 @@
   <div id="grafic"></div>
   <div class="wrap" id="wrap-out"><table id="out" class="tbl"><thead></thead><tbody></tbody></table></div>
 
+  <nav class="pager" id="pager" hidden>
+    <button type="button" id="pag-prev">← Pagina anterioară</button>
+    <span id="pag-info"></span>
+    <button type="button" id="pag-next">Pagina următoare →</button>
+  </nav>
+
   <!-- The address bar now carries the whole view, but it changes silently and nobody
        watches it. Saying so is the difference between a feature and an implementation
        detail. -->
@@ -510,7 +527,7 @@ const VIEWS = {
              mediana_ron, n_excluse_peste_plafon
       FROM read_parquet(${lit(url('sumar_an.parquet'))})
       WHERE n >= ${f.minn} ${f.an ? `AND an = ${f.an}` : ''}
-      ORDER BY an DESC, valoare_totala_ron DESC NULLS LAST`,
+      ${f.tail('an DESC, valoare_totala_ron DESC NULLS LAST')}`,
   },
   cpv: {
     label: 'După CPV',
@@ -528,8 +545,7 @@ const VIEWS = {
         ${f.an ? `AND an = ${f.an}` : ''}
         ${f.q ? `AND (cpv ILIKE ${lit('%' + f.q + '%')}
                    OR cpv_denumire ILIKE ${lit('%' + f.q + '%')})` : ''}
-      ORDER BY valoare_totala_ron DESC NULLS LAST
-      LIMIT 200`,
+      ${f.tail('valoare_totala_ron DESC NULLS LAST')}`,
   },
   judete: {
     label: 'Județe',
@@ -547,8 +563,7 @@ const VIEWS = {
       WHERE n >= ${f.minn}
         ${f.an ? `AND an = ${f.an}` : ''}
         ${f.q ? `AND judet_autoritate ILIKE ${lit('%' + f.q + '%')}` : ''}
-      ORDER BY an DESC, n DESC
-      LIMIT 200`,
+      ${f.tail('an DESC, n DESC')}`,
   },
   contracte: {
     label: 'Contracte',
@@ -567,7 +582,7 @@ const VIEWS = {
              autoritati, furnizori
       FROM read_parquet(${lit(url('contracte_an.parquet'))})
       WHERE n >= ${f.minn} ${f.an ? `AND an = ${f.an}` : ''}
-      ORDER BY an DESC, valoare_totala_ron DESC NULLS LAST`,
+      ${f.tail('an DESC, valoare_totala_ron DESC NULLS LAST')}`,
   },
   // One organisation, everything we hold about it, on one screen — the pattern
   // harta-firmelor.ro uses for its company file, and the thing this page most obviously
@@ -606,8 +621,7 @@ const VIEWS = {
         ${f.an ? `AND an = ${f.an}` : ''}
         ${f.q ? `AND (autoritate ILIKE ${lit('%' + f.q + '%')}
                    OR autoritate_cui ILIKE ${lit('%' + f.q + '%')})` : ''}
-      ORDER BY valoare_totala_ron DESC NULLS LAST
-      LIMIT 200`,
+      ${f.tail('valoare_totala_ron DESC NULLS LAST')}`,
   },
   preturi: {
     label: 'Prețuri unitare',
@@ -623,8 +637,7 @@ const VIEWS = {
         ${f.q ? `AND (denumire_key ILIKE ${lit('%' + f.q + '%')}
                    OR cpv ILIKE ${lit('%' + f.q + '%')}
                    OR um ILIKE ${lit('%' + f.q + '%')})` : ''}
-      ORDER BY n DESC, mediana_ron DESC NULLS LAST
-      LIMIT 200`,
+      ${f.tail('n DESC, mediana_ron DESC NULLS LAST')}`,
   },
   // Not a tab. Reached by clicking a row above, and the reason the archive exists: a
   // median is an argument, the transactions under it are the evidence. Everything else
@@ -644,7 +657,7 @@ const VIEWS = {
           'sunt mai multe rânduri aici decât „achiziții" în tabelul anterior. Un preț ' +
           'mai mare nu este o abatere: cantitatea, momentul și condițiile de livrare ' +
           'diferă.',
-    sql: () => {
+    sql: (f) => {
       const files = archiveFiles(drill.din, drill.pana_la);
       if (!files.length) return 'SELECT NULL WHERE false';
       const eq = (col, v) =>
@@ -660,8 +673,7 @@ const VIEWS = {
         AND ${eq('denumire_key', drill.denumire_key)}
         AND ${eq('um', drill.um)}
         AND ${eq('marime_pachet', drill.marime_pachet)}
-      ORDER BY pret_unitar_ron DESC NULLS LAST
-      LIMIT 500`;
+      ${f.tail('pret_unitar_ron DESC NULLS LAST', 500)}`;
     },
   },
   firme: {
@@ -680,8 +692,7 @@ const VIEWS = {
       ${f.q ? `WHERE denumire ILIKE ${lit('%' + f.q + '%')}
             OR cui ILIKE ${lit('%' + f.q + '%')}
             OR judet ILIKE ${lit('%' + f.q + '%')}` : ''}
-      ORDER BY denumire
-      LIMIT 200`,
+      ${f.tail('denumire')}`,
   },
   // The old `entitate` aspect ran exactly the query the file's Semnale section runs, and
   // nothing else. Keeping both would offer "Fișă completă" and a strict subset of it in
@@ -700,8 +711,7 @@ const VIEWS = {
             OR institutie ILIKE ${lit('%' + f.q + '%')}
             OR titlu ILIKE ${lit('%' + f.q + '%')}
             OR descriere ILIKE ${lit('%' + f.q + '%')}` : ''}
-      ORDER BY data_intalnirii DESC
-      LIMIT 200`,
+      ${f.tail('data_intalnirii DESC')}`,
   },
   furnizori: {
     label: 'Furnizori',
@@ -720,8 +730,7 @@ const VIEWS = {
         ${f.an ? `AND an = ${f.an}` : ''}
         ${f.q ? `AND (furnizor ILIKE ${lit('%' + f.q + '%')}
                    OR furnizor_cui ILIKE ${lit('%' + f.q + '%')})` : ''}
-      ORDER BY valoare_totala_ron DESC NULLS LAST
-      LIMIT 200`,
+      ${f.tail('valoare_totala_ron DESC NULLS LAST')}`,
   },
 };
 
@@ -925,11 +934,52 @@ function matcher(term) {
 
 let manifest = null, conn = null, current = 'sumar', indicator = null;
 
+// ---------------------------------------------------------------------------
+// Order and paging.
+//
+// Every view had ONE fixed order and a hard LIMIT 200, which meant the 201st largest
+// supplier did not exist as far as this page was concerned, and "which authority buys
+// the least" could not be asked at all.
+//
+// Sorting RE-QUERIES. Reordering the two hundred rows already fetched would be cheaper
+// and would answer a different question — ascending by value over the top 200 by value
+// gives the smallest of the largest, presented as the smallest. On a page whose purpose
+// is letting people check figures, a control that quietly answers a different question
+// than the one it appears to ask is worse than no control.
+const PAGE = 200;
+let sortCol = '';
+let sortDir = 'desc';
+let pagina = 0;
+
+// A column name reaches SQL, and it arrives from the URL as well as from a click, so it
+// is whitelisted rather than escaped: no quotes, no spaces, no parentheses can survive
+// this, and anything that does not match is dropped rather than passed through. A name
+// that passes but does not exist is DuckDB's error to report, which the page already does.
+const SORTABLE = /^[a-z_][a-z0-9_]{0,63}$/;
+const validSort = (c) => typeof c === 'string' && SORTABLE.test(c);
+
+function pageSizeFor(key) {
+  // The drill-down is the evidence behind a single median. Paging it would break up the
+  // one thing on this site a reader is meant to read whole.
+  return key === 'detaliu' ? 500 : PAGE;
+}
+
 function filters() {
+  const size = pageSizeFor(current);
   return {
     an: /^\d{4}$/.test($('an').value) ? $('an').value : '',
     q: $('q').value.trim(),
     minn: Math.max(1, parseInt($('minn').value, 10) || 1),
+    // The reader's order if there is one, the view's own if not — and one row more than
+    // the page holds, which is how the page knows whether a next page exists without
+    // paying for a COUNT over the whole file.
+    tail(implicit, override) {
+      const n = override || size;
+      const order = validSort(sortCol)
+        ? `${sortCol} ${sortDir === 'asc' ? 'ASC' : 'DESC'} NULLS LAST`
+        : implicit;
+      return `ORDER BY ${order}\n      LIMIT ${n + 1} OFFSET ${pagina * n}`;
+    },
   };
 }
 
@@ -972,7 +1022,12 @@ function deflate(sql, view) {
 // which markers survive: `${f.an ? ... : ''}` drops the marker when the clause is not
 // used, and `n >= ${f.minn}` keeps it. A view that stops filtering by year loses the
 // control with no list to update.
-const CONTROL_PROBE = Object.freeze({ an: '__AN__', minn: '__MINN__', q: '__Q__', baza: '' });
+// `tail` returns nothing here: the probe is only looking for which filter markers survive
+// into the SQL, and an ORDER BY carries none of them. Without it every view's sql() would
+// throw on the probe and fall back to showing both controls everywhere.
+const CONTROL_PROBE = Object.freeze({
+  an: '__AN__', minn: '__MINN__', q: '__Q__', baza: '', tail: () => '',
+});
 
 function controlsFor(key) {
   if (key === 'indicatori') {
@@ -1001,7 +1056,7 @@ function buildSql() {
     return `
       SELECT * FROM read_parquet(${lit(url(indicator.file))})
       ${f.an && hasYear ? `WHERE an = ${f.an}` : ''}
-      LIMIT 200`;
+      ${f.tail('1')}`;
   }
   return deflate(VIEWS[current].sql(filters()), VIEWS[current]);
 }
@@ -1015,9 +1070,9 @@ function buildSql() {
 //
 // Returns null when there is nothing worth drawing — one column is not a trend, and a
 // chart of a single bar takes space to say less than the row below it does.
-function chartFor(spec, table) {
+function chartFor(spec, table, maxRows = Infinity) {
   if (!spec || !table || !table.numRows) return null;
-  const rows = table.toArray();
+  const rows = table.toArray().slice(0, maxRows);
   const xs = [];                        // distinct x values, in first-seen order
   const bySeries = new Map();           // series label -> Map(x -> total)
   for (const r of rows) {
@@ -1148,7 +1203,7 @@ function chartFor(spec, table) {
 // dates decoded from epoch milliseconds, a year not given thousands separators, the
 // header carried into each cell for the phone layout — has to hold in all of them. Two
 // copies of this would drift within a week.
-function fillTable(el, table, { onRow = null } = {}) {
+function fillTable(el, table, { onRow = null, maxRows = Infinity, sortable = false } = {}) {
   const head = el.tHead, body = el.tBodies[0];
   head.innerHTML = ''; body.innerHTML = '';
   const cols = table.schema.fields.map((f) => f.name);
@@ -1164,10 +1219,39 @@ function fillTable(el, table, { onRow = null } = {}) {
     table.schema.fields.filter((f) => /Date|Timestamp/.test(f.type.toString())).map((f) => f.name),
   );
   head.insertRow().append(...cols.map((c) => {
-    const th = document.createElement('th'); th.textContent = label(c);
-    th.title = c; return th;
+    const th = document.createElement('th');
+    th.textContent = label(c);
+    th.title = c;
+    if (sortable && validSort(c)) {
+      th.className = 'sortable';
+      th.tabIndex = 0;
+      const active = c === sortCol;
+      if (active) {
+        th.classList.add('sorted');
+        th.setAttribute('aria-sort', sortDir === 'asc' ? 'ascending' : 'descending');
+        th.append(document.createTextNode(sortDir === 'asc' ? ' \u2191' : ' \u2193'));
+      }
+      th.title = `${c} — sortează`;
+      // A new column starts descending: on this page the interesting end of almost every
+      // column is the large one. Clicking the column already sorted flips it.
+      const go = () => {
+        sortDir = active && sortDir === 'desc' ? 'asc' : 'desc';
+        sortCol = c;
+        pagina = 0;   // a different order makes the old page number meaningless
+        pushNext = true;
+        run();
+      };
+      th.onclick = go;
+      th.onkeydown = (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); }
+      };
+    }
+    return th;
   }));
-  for (const row of table.toArray()) {
+  // Sliced, because the query deliberately fetches one row more than the page shows —
+  // that extra row is how the pager knows there is a next page, and it must never be
+  // drawn.
+  for (const row of table.toArray().slice(0, maxRows)) {
     const tr = body.insertRow();
     // A row is clickable when the caller says what clicking it does — a price group
     // opens its acquisitions, a search result opens that organisation's file.
@@ -1206,14 +1290,29 @@ function fillTable(el, table, { onRow = null } = {}) {
       }
     }
   }
-  return table.numRows;
+  return Math.min(table.numRows, maxRows);
 }
 
 function render(table) {
   const head = $('out').tHead, body = $('out').tBodies[0];
   head.innerHTML = ''; body.innerHTML = '';
   $('grafic').textContent = '';
+  const size = pageSizeFor(current);
+  // One row more than the page holds was fetched on purpose; its only job is to answer
+  // "is there a next page" without a COUNT over the whole file.
+  const more = table.numRows > size;
+  const shown = Math.min(table.numRows, size);
+  showPager(more, shown);
   if (!table.numRows) {
+    // Page 4 of a result that just shrank to two pages is empty, and "relax your filters"
+    // is the wrong advice — the filters are fine, the page number is stale.
+    if (pagina > 0) {
+      status('Pagina aceasta nu mai există. Înapoi la prima.');
+      pagina = 0;
+      pushNext = false;
+      run();
+      return;
+    }
     status('Niciun rezultat. Relaxați filtrele.');
     // "No results" is the wrong answer when the name is simply on the other side of the
     // transaction. Searching DEDEMAN — a supplier — lands on the buyers view and reports
@@ -1222,9 +1321,11 @@ function render(table) {
     if (VIEWS[current] && VIEWS[current].group === ENTITY_GROUP) suggestOtherAspect();
     return;
   }
-  const fig = chartFor(VIEWS[current] && VIEWS[current].chart, table);
+  const fig = chartFor(VIEWS[current] && VIEWS[current].chart, table, size);
   if (fig) $('grafic').append(fig);
   fillTable($('out'), table, {
+    maxRows: size,
+    sortable: true,
     onRow: current !== 'preturi' ? null : (row) => ({
       title: 'Vezi achizițiile din spatele acestei mediane',
       open: () => {
@@ -1238,7 +1339,45 @@ function render(table) {
     }),
   });
   // Same agreement rule as everywhere else: this line has been saying "1 rânduri".
-  status(`${randuri(table.numRows)}${table.numRows === 200 ? ' (limitat la 200)' : ''}.`);
+  //
+  // "(limitat la 200)" is gone. It was true and it was a dead end — the reader was told
+  // rows had been withheld and given no way to reach them. Now the range says which rows
+  // these are and the pager below says there are more.
+  const from = pagina * size + 1;
+  status(pagina || more
+    ? `Rândurile ${from.toLocaleString('ro-RO')}–${(pagina * size + shown).toLocaleString('ro-RO')}`
+      + `${more ? '' : ' (ultimele)'}.`
+    : `${randuri(shown)}.`);
+}
+
+// Prev/next under the table. Hidden entirely when everything fits on one page, which is
+// most views most of the time — a disabled pager under a 41-row summary is furniture.
+function showPager(more, shown) {
+  const nav = $('pager');
+  nav.hidden = !(pagina > 0 || more);
+  if (nav.hidden) return;
+  $('pag-prev').disabled = pagina === 0;
+  $('pag-next').disabled = !more;
+  $('pag-info').textContent = `Pagina ${pagina + 1}`;
+  // A last page with no rows would have been caught above; this only labels a short one.
+  if (!more && shown) $('pag-info').textContent += ' (ultima)';
+}
+
+// Any change that produces a different set of rows starts again at the first page.
+function rerun() {
+  pagina = 0;
+  run();
+}
+
+function turnPage(delta) {
+  const next = Math.max(0, pagina + delta);
+  if (next === pagina) return;
+  pagina = next;
+  pushNext = true;
+  run();
+  // The reader is at the bottom of a table when they press this; without it they land at
+  // the bottom of the NEXT one, having seen none of it.
+  $('tabs').scrollIntoView({ block: 'start', behavior: 'smooth' });
 }
 
 // A count of signals with no denominator is a smear. A large hospital generates more
@@ -1325,7 +1464,8 @@ async function suggestOtherAspect() {
 // GitHub Pages: a path or a query the server has never heard of returns 404, while
 // everything after "#" never leaves the browser. It also means an old link degrades to
 // the summary rather than to an error.
-const URL_KEYS = ['v', 's', 'q', 'an', 'minn', 'baza', 'cpv', 'p', 'um', 'mp', 'din', 'pana'];
+const URL_KEYS = ['v', 's', 'q', 'an', 'minn', 'baza', 'sort', 'dir', 'pag',
+                  'cpv', 'p', 'um', 'mp', 'din', 'pana'];
 
 // Set while a hash is being read back, so applying a link does not immediately rewrite it.
 let applying = false;
@@ -1352,6 +1492,10 @@ function currentState() {
   if (uses.an && f.an) s.an = f.an;
   if (uses.minn && f.minn > 1) s.minn = String(f.minn);
   if ($('baza').value && VIEWS[current] && VIEWS[current].money) s.baza = $('baza').value;
+  // Where in the results, not just which results. A link to "the cheapest unit prices,
+  // page 3" is the kind of thing worth sending someone.
+  if (validSort(sortCol)) { s.sort = sortCol; s.dir = sortDir; }
+  if (pagina > 0) s.pag = String(pagina + 1);   // 1-based in the link, 0-based inside
   if (current === 'detaliu' && drill) {
     // A group is identified by all four parts, and any of them may legitimately be null —
     // "no unit of measure" is a real group, not a missing value. Absent key means null;
@@ -1416,6 +1560,11 @@ function applyHash() {
     $('an').value = p.get('an') || '';
     $('baza').value = p.get('baza') || '';
     $('minn').value = p.get('minn') || '1';
+    // Dropped rather than trusted: a column name goes into SQL, and this one arrives from
+    // whatever was in the address bar.
+    sortCol = validSort(p.get('sort')) ? p.get('sort') : '';
+    sortDir = p.get('dir') === 'asc' ? 'asc' : 'desc';
+    pagina = Math.max(0, (parseInt(p.get('pag'), 10) || 1) - 1);
     drill = key !== 'detaliu' ? null : {
       cpv: p.has('cpv') ? p.get('cpv') : null,
       denumire_key: p.has('p') ? p.get('p') : null,
@@ -1680,6 +1829,11 @@ function selectTab(key, ind) {
   if (!ready) return;
   // Changing what you are looking at is a navigation; changing how it is filtered is not.
   pushNext = true;
+  // A page number and a sort column belong to the view they were chosen in. Carried
+  // across, the sort names a column the new view does not have — and the reader lands on
+  // page 4 of something they have not seen page 1 of. applyHash() sets them afterwards
+  // when a link carries its own.
+  if (!applying && key !== current) { pagina = 0; sortCol = ''; sortDir = 'desc'; }
   current = key;
   indicator = ind || null;
   $('inapoi').style.display = key === 'detaliu' ? 'block' : 'none';
@@ -1691,7 +1845,7 @@ function selectTab(key, ind) {
   // what clears this. Without the line, moving from the summary to a company's file
   // leaves the summary's chart stranded above it, captioned as national spending and
   // sitting under that company's name.
-  if (isDosar) $('grafic').textContent = '';
+  if (isDosar) { $('grafic').textContent = ''; $('pager').hidden = true; }
   if (!isDosar) {
     $('dosar').textContent = '';
     $('dosar-cap').textContent = '';
@@ -1901,6 +2055,7 @@ function heroSearch() {
   }
   // Searching is somewhere you can come back from, the same as changing tab.
   pushNext = true;
+  pagina = 0;
   run();
 }
 
@@ -1911,14 +2066,19 @@ function heroSearch() {
 if (window.matchMedia('(max-width: 640px)').matches) $('banner').open = false;
 
 $('inapoi').querySelector('button').addEventListener('click', () => selectTab('preturi'));
+$('pag-prev').addEventListener('click', () => turnPage(-1));
+$('pag-next').addEventListener('click', () => turnPage(1));
 $('run').addEventListener('click', heroSearch);
 $('q').addEventListener('keydown', (e) => { if (e.key === 'Enter') heroSearch(); });
-$('an').addEventListener('change', run);
-$('baza').addEventListener('change', run);
+// Through rerun(), not run(), because each of these changes the result set: staying on
+// page 4 while the thing being paged through is replaced shows the reader an arbitrary
+// slice of something they have not seen the start of.
+$('an').addEventListener('change', rerun);
+$('baza').addEventListener('change', rerun);
 // This control had no listener at all. Typing a group size did nothing until the reader
 // happened to press Caută, so on every view without a search box — the summary, contracts
 // — it looked simply broken.
-$('minn').addEventListener('change', run);
+$('minn').addEventListener('change', rerun);
 
 // Back and Forward move between views rather than off the site. Guarded on `ready`
 // because a hash can be navigated before the engine exists, and selectTab would refuse
