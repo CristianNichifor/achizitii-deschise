@@ -97,16 +97,29 @@ jobs:
       - name: Archive prices and rebuild the published bundle
         run: achizitii publish --only preturi
 
-      # Consolidates the daily archive into monthly Parquet and uploads it. Skipped
-      # silently when the R2 secrets are absent, so a fork without them still works.
+      # Consolidates the daily archive into monthly Parquet and uploads it. A fork
+      # without the secrets must still work, so absent credentials are a skip, not a
+      # failure.
+      #
+      # The guard is inside the script on purpose. It used to be `if: env.R2_ACCOUNT_ID
+      # != ''`, which reads a variable defined in this step's OWN env: block, and whether
+      # that is in scope for its own if: is genuinely ambiguous. If it is not, the step
+      # is skipped forever — including after someone has set every secret correctly — and
+      # the symptom is silence. A shell test has no such ambiguity and says out loud which
+      # branch it took.
       - name: Publish data to R2
-        if: env.R2_ACCOUNT_ID != ''
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: |
+          set -euo pipefail
+          if [ -z "${R2_ACCOUNT_ID:-}" ]; then
+            echo "::notice::R2 secrets not set; data stays on Pages only."
+            exit 0
+          fi
+          echo "R2 configured for bucket '${R2_BUCKET}'; consolidating and uploading."
           pip install -e ".[r2]"
           achizitii publish --only preturi --r2
 
