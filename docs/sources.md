@@ -143,6 +143,7 @@ project addresses.
   caveat from SICAP.ai's work: CUI is *not* unique in ONRC (~3.97M distinct CUIs across
   4.17M registration records), so a naive join silently duplicates rows.
 - **INS CPI** — deflation to a constant base year.
+- ~~**ANI / PREVENT**~~ — spiked 2026-09-08 and rejected; see the section below.
 - **CPV vocabulary (RO labels)** — from EU vocabularies, for the alias table.
 
 ## Prior art
@@ -176,6 +177,52 @@ fuzzy string matching against 751,505 supplier names, over institutions that mak
 fire almost never and would name real individuals on the strength of a string match. A
 meeting is lawful and the register exists to make it visible — its presence in this
 dataset says nothing about any contract. A test enforces the separation.
+
+
+## ANI / PREVENT — reference only, NOT ingested
+
+The National Integrity Agency runs the one system in Romania built precisely for the
+inference this project keeps being asked for: **PREVENT** cross-references integrity
+forms filed during SEAP bidding against declarations of assets and interests, to catch
+conflicts of interest before a contract is awarded. Legal basis: **Legea 184/2016**.
+
+Spiked 2026-09-08 against the plan's own decision gate — *is there a structured
+identifier that joins to `furnizor_cui` / `autoritate_cui`?* The answer is no, on three
+independent counts.
+
+| | |
+|---|---|
+| PREVENT warnings, case level | **not published.** Only aggregate quarterly and annual results |
+| PREVENT warnings, total | **212** over 2017-06-20 → 2024-09-30, 9.9 mld RON |
+| ANI on data.gov.ro | **absent** — not one of the 181 organisations; `declaratii avere` returns 0 datasets |
+| Declarations portal | `declaratii.integritate.eu`, an Angular/form.io app over a Spring backend behind Cloudflare. `/robots.txt` returns the app shell, so there is no stated crawl policy |
+| Subject of a declaration | **a person**, not a company |
+
+**The join does not exist.** A declaration names an official and the companies where they
+or their relatives hold a role. Connecting that to procurement means person → company
+name → one of our **161,168** supplier identities, by fuzzy string match — then publishing
+the result as a financial connection involving a **named private individual**. That is the
+same shape rejected for [RUTI](#ruti--registrul-unic-al-transparenței-intereselor) and
+strictly worse: RUTI at least identifies an institution, and a meeting is openly lawful.
+
+Access was not the blocker and should not be recorded as one. The backend answers a plain
+request — `/api` returns an ordinary Spring 404, not a challenge — and an early reading of
+`challenges.cloudflare.com` in the bundle as an anti-automation gate was wrong; form.io
+ships Turnstile as a stock component. **The reason not to build this is the inference, not
+the access.**
+
+**Worth keeping for scale, though.** PREVENT — purpose-built, with subpoena-grade inputs
+this project cannot see — issues about **30 warnings a year**. `ofertant-unic-01` alone
+flags 36,989 rows and `prag-01` 18,658. That is not a contradiction and not a claim to be
+doing PREVENT's job better: PREVENT answers *"is this specific award a conflict of
+interest?"* with data on people, and answers it authoritatively. This project answers
+*"which awards are worth a look?"* over a far larger surface, with data anyone can check.
+Where PREVENT's aggregates are useful is as an external sanity check on the order of
+magnitude of what a state body considers actionable.
+
+Revisit if ANI ever publishes case-level warnings carrying a tender identifier or a CUI.
+That single change would make `conflict-01` buildable with a real legal basis to cite
+(Legea 98/2016 art. 58-63) and no fuzzy matching at all.
 
 
 ## ANAF — company facts (free, no key)
