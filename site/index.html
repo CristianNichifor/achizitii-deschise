@@ -637,6 +637,37 @@ function deflate(sql, view) {
     CROSS JOIN (SELECT indice FROM read_parquet(${d}) WHERE an = ${Number(base)}) b`;
 }
 
+// Which filters a view actually honours, asked of the view itself.
+//
+// This used to be two hand-written lists — one naming the yearless views, one naming the
+// views without a group size — and both had drifted by exactly the two views added most
+// recently: `entitate` offered a year filter and an n-minimum that its SQL ignores, and
+// `detaliu` offered a year filter. A control that looks like it works and does nothing is
+// the same fault this page already fixed once for the search box.
+//
+// So the view is asked instead of remembered. Build its SQL with marked values and see
+// which markers survive: `${f.an ? ... : ''}` drops the marker when the clause is not
+// used, and `n >= ${f.minn}` keeps it. A view that stops filtering by year loses the
+// control with no list to update.
+const CONTROL_PROBE = Object.freeze({ an: '__AN__', minn: '__MINN__', q: '__Q__', baza: '' });
+
+function controlsFor(key) {
+  if (key === 'indicatori') {
+    // Only some findings tables carry a year; the manifest says which.
+    return { an: !!(indicator && (indicator.columns || []).includes('an')), minn: false };
+  }
+  const v = VIEWS[key];
+  if (!v || typeof v.sql !== 'function') return { an: false, minn: false };
+  try {
+    const sql = String(v.sql(CONTROL_PROBE) || '');
+    return { an: sql.includes('__AN__'), minn: sql.includes('__MINN__') };
+  } catch {
+    // A view whose SQL cannot be built speculatively keeps its controls. Hiding a working
+    // filter is the worse failure of the two.
+    return { an: true, minn: true };
+  }
+}
+
 function buildSql() {
   if (current === 'indicatori') {
     const f = filters();
@@ -845,9 +876,8 @@ function selectTab(key, ind) {
   // Only the year-keyed views can be deflated; the price archive and the meetings
   // register are not organised by year.
   $('wrap-baza').style.display = VIEWS[key] && VIEWS[key].money ? '' : 'none';
-  $('minn').parentElement.style.display =
-    (key === 'indicatori' || key === 'ruti' || key === 'firme' || key === 'detaliu')
-      ? 'none' : '';
+  const uses = controlsFor(key);
+  $('minn').parentElement.style.display = uses.minn ? '' : 'none';
   const search = key === 'indicatori' ? null : VIEWS[key].search;
   $('q').placeholder = search
     ? `Caută după ${search}…`
@@ -870,9 +900,7 @@ function selectTab(key, ind) {
     if (opt) $('semnal').value = indicator.id;
     $('semnal-temei').textContent = indicator.temei || '';
   }
-  const yearless = key === 'preturi' || key === 'ruti' || key === 'firme'
-    || (key === 'indicatori' && !(indicator.columns || []).includes('an'));
-  $('an').parentElement.style.display = yearless ? 'none' : '';
+  $('an').parentElement.style.display = uses.an ? '' : 'none';
   if (key === 'preturi' && manifest.preturi_unitare) {
     const p = manifest.preturi_unitare;
     $('note').textContent = VIEWS.preturi.note +
@@ -893,7 +921,7 @@ function selectTab(key, ind) {
   $('note').textContent = key === 'indicatori'
     ? ((indicator && indicator.descriere ? indicator.descriere + ' ' : '') +
        'Fiecare rând înseamnă „merită verificat”, niciodată „este ilegal”.')
-      + (yearless ? ' Acest indicator agregă pe toți anii, deci nu are filtru de an.' : '')
+      + (uses.an ? '' : ' Acest indicator agregă pe toți anii, deci nu are filtru de an.')
     : VIEWS[key].note;
   run();
 }
