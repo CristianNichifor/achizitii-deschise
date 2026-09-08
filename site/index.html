@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>achizitii-deschise — achiziții publice din România, interogabile în browser</title>
+<!-- Inline, because every visit was issuing a request for /favicon.ico and collecting a
+     404 — the only console error left on the published site. A data URI keeps the page a
+     single file, which is what makes it servable from any static host without a build.
+     Three ascending bars in the accent navy: the same motif as the charts. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23123a6b'/%3E%3Crect x='3.5' y='8.5' width='2.5' height='4.5' fill='%23fff'/%3E%3Crect x='6.75' y='5.5' width='2.5' height='7.5' fill='%23fff'/%3E%3Crect x='10' y='3' width='2.5' height='10' fill='%23fff'/%3E%3C/svg%3E">
 <style>
   :root {
     --ink: #101418; --muted: #5c6672; --paper: #fff; --sub: #f4f6f8;
