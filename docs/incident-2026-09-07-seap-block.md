@@ -62,3 +62,42 @@ Contact SEAP support with:
 Do not discover a service's tolerance by approaching it. For a public service with no
 published rate limit, pick a rate that is obviously modest, and if more is genuinely
 needed, ask the operator. A throughput measurement is not permission.
+
+## Follow-up, 2026-09-08: the limit was published all along
+
+The fix above set `MAX_RPS` to 4.0 and called it "far below what drew the block". That was
+true and beside the point. SEAP had published its thresholds on 2026-07-15:
+
+| Threshold | Meaning |
+|---|---|
+| 500 accesses in 5 minutes from one IP | 1.67 requests/second sustained |
+| 50 accesses in 1 second | burst ceiling |
+
+4.0 rps is 1,200 requests per 5 minutes — **2.4× the published sustained limit**. The
+post-incident configuration was still over the line; it simply ran on GitHub runners,
+whose addresses had not yet been blocked. A backfill was cancelled mid-run on 2026-09-08
+when this was found.
+
+`MAX_RPS` is now **1.5**, leaving headroom under 1.67 for retries.
+
+### What this costs
+
+At 1.5 rps a weekday of ~8,300 acquisitions takes about 2 hours rather than 45 minutes.
+Full history goes from ~100 days of continuous fetching to **~266 days**; the last three
+years, from 21 days to **~56**.
+
+### The part that is not a rate question
+
+The same announcement discourages parallel queries, repeated requests at short intervals,
+and **continuous automated processes over extended periods**, and directs anyone needing
+high-volume or recurring programmatic access to contact support. A multi-month crawl is
+what that paragraph describes, at any rate. The next step is a request to SEAP support —
+both to lift the block on [adresa IP redactata] and to ask what bulk or whitelisted access exists
+for a public-interest open-data project. Not another round of tuning.
+
+### The lesson, stated plainly
+
+The first mistake was inferring consent from performance: 37 records a second with flat
+latency meant the server answered quickly, never that it agreed. The second was fixing
+that by picking a smaller number that still felt polite, instead of looking for whether
+the operator had said what the number should be. They had, three weeks earlier.
