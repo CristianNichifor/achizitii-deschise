@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 import duckdb
@@ -152,3 +153,29 @@ def test_upload_refuses_to_exceed_the_shared_budget(tmp_path: Path, monkeypatch)
     assert boto3 is not None
     with pytest.raises(RuntimeError, match="budget"):
         r2.upload([big], tmp_path)
+
+
+def test_same_size_different_content_is_still_uploaded(tmp_path: Path) -> None:
+    """The bug the first real upload exposed.
+
+    The skip compared byte length only. Two consecutive publishes produced a manifest of
+    11,560 bytes both times and a different file each time — a date moving from
+    2026-09-06 to 2026-09-07 is exactly the same length — so the bucket kept an index
+    that no longer described the data, and every size check agreed it was fine.
+
+    A closed month is genuinely immutable and may still be skipped; the manifest and the
+    month currently being written may not.
+    """
+    from achizitii import r2
+
+    current = datetime.now(UTC).strftime("%Y-%m")
+    manifest = tmp_path / "manifest.json"
+    live = tmp_path / MONTHLY_DIR / f"{current}.parquet"
+    closed = tmp_path / MONTHLY_DIR / "2019-03.parquet"
+    live.parent.mkdir(parents=True, exist_ok=True)
+    for p in (manifest, live, closed):
+        p.write_bytes(b"x" * 64)
+
+    assert r2._mutable(manifest), "the manifest changes on every run"
+    assert r2._mutable(live), "the current month is still being written"
+    assert not r2._mutable(closed), "a closed month is frozen and may be skipped"
