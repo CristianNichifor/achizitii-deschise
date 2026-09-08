@@ -115,8 +115,18 @@ jobs:
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: |
           set -euo pipefail
-          if [ -z "${R2_ACCOUNT_ID:-}" ]; then
-            echo "::notice::R2 secrets not set; data stays on Pages only."
+          # All four, not just the account id. Two of these are not secret at all -
+          # the account id is visible in a dashboard URL and the bucket name is
+          # "achizitii-deschise" - so they get set first and alone, which is exactly
+          # the state that made a one-variable check misreport: it announced "R2
+          # configured", installed boto3, and then uploaded nothing, because
+          # R2Config.from_env() quite correctly requires the whole set.
+          missing=""
+          for name in R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET; do
+            [ -z "${!name:-}" ] && missing="${missing} ${name}"
+          done
+          if [ -n "${missing}" ]; then
+            echo "::notice::R2 not configured (missing:${missing}); data stays on Pages only."
             exit 0
           fi
           echo "R2 configured for bucket '${R2_BUCKET}'; consolidating and uploading."

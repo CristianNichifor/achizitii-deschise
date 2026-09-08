@@ -128,6 +128,27 @@ def consolidate_months(out: Path | None = None) -> list[Path]:
     return written
 
 
+def _mutable(path: Path) -> bool:
+    """Whether this object can change without changing size.
+
+    The upload skips anything already present at the same byte length, which is a cheap
+    and adequate test for a month that has closed — the never-shrink rule only ever adds
+    days to the CURRENT month, so a closed month is frozen.
+
+    It is NOT adequate for anything still being written. Caught in the act: the first two
+    real uploads left a manifest in the bucket that was 11,560 bytes both times and a
+    different file each time, because a date moving from 2026-09-06 to 2026-09-07 is
+    exactly the same length. The index describing the data was stale while every checksum
+    said it was fine.
+
+    So the two things that still change are always re-uploaded. They are small — the
+    manifest is 11 KB — and being wrong about them is expensive in a way 11 KB is not.
+    """
+    if path.name == "manifest.json":
+        return True
+    return path.stem == datetime.now(UTC).strftime("%Y-%m")
+
+
 def _cache_control(path: Path) -> str:
     """How long an object may be cached at the edge.
 
@@ -189,7 +210,7 @@ def upload(paths: list[Path], base: Path, config: R2Config | None = None) -> dic
     for path in paths:
         key = str(path.relative_to(base)).replace(os.sep, "/")
         size = path.stat().st_size
-        if existing.get(key) == size:
+        if existing.get(key) == size and not _mutable(path):
             skipped += 1
             continue
         client.upload_file(
