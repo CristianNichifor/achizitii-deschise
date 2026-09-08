@@ -23,6 +23,35 @@ Daily files would exhaust the free tier at under a thousand queries. Collection 
 daily — that is the unit a run produces, and the never-shrink rule depends on it — but
 `achizitii publish --r2` consolidates to one file per month before upload.
 
+## The free tier is shared with the rest of the account
+
+This project is one of several Cloudflare projects on the same account, and the 10 GB /
+1M Class A / 10M Class B allowance is **per account, not per bucket**. Overage lands on
+one invoice regardless of which project caused it, so this project is deliberately
+frugal:
+
+| Artefact | Size | On R2? |
+|---|---|---|
+| Published line items, 2 years | 0.29 GB | yes |
+| Published line items, full history | 2.30 GB | yes |
+| Raw SEAP JSON archive | 14 GB | **no** — alone it exceeds the whole shared tier |
+| Bulk gov Parquet | 12 GB | **no** — rebuildable from data.gov.ro, stays local |
+| Aggregates | 26 MB | **no** — stays on Pages, which keeps ordinary reads off R2 entirely |
+
+Three mechanisms keep it there:
+
+**A hard budget.** `upload()` refuses to push more than `R2_MAX_GB` (default 4) and says
+why. Failing loudly beats discovering the overage on someone else's invoice.
+
+**Immutable caching.** A closed month cannot change — the never-shrink rule only ever adds
+days to the *current* month — so closed months are served
+`max-age=31536000, immutable` and, behind a custom domain, are read from Cloudflare's edge
+rather than from R2. A cached read is not a Class B operation. The current month gets an
+hour, the manifest five minutes.
+
+**Aggregates stay on Pages.** The common case — someone opening the site and looking at
+totals — never touches R2 at all. Only drill-down into line items does.
+
 ## Cost
 
 | Footprint | Over the 10 GB free tier | Monthly |

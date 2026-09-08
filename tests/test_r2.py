@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import duckdb
+import pytest
 
 from achizitii.r2 import MONTHLY_DIR, PRICES_DIR, R2Config, consolidate_months, upload
 
@@ -110,3 +111,44 @@ def test_secrets_are_never_written_to_the_repo() -> None:
     for leak in ('aws_access_key_id="', "AKIA", 'secret_access_key="'):
         assert leak not in src, f"{leak!r} looks like a hardcoded credential"
     assert "os.environ.get" in src, "credentials must come from the environment"
+
+
+def test_closed_months_are_immutable_but_the_current_one_is_not() -> None:
+    """Edge caching is the main lever on Class B ops, which the whole account shares.
+
+    A closed month cannot change — the never-shrink rule only ever adds days to the
+    CURRENT month — so it can be cached for a year and read for free thereafter. The
+    current month and the manifest change daily and must not be.
+    """
+    from datetime import UTC, datetime
+
+    from achizitii.r2 import _cache_control
+
+    current = datetime.now(UTC).strftime("%Y-%m")
+    assert "immutable" in _cache_control(Path("2019-03.parquet"))
+    assert "immutable" not in _cache_control(Path(f"{current}.parquet"))
+    assert "max-age=300" in _cache_control(Path("manifest.json"))
+
+
+def test_upload_refuses_to_exceed_the_shared_budget(tmp_path: Path, monkeypatch) -> None:
+    """The 10 GB free tier belongs to the account, not to this project.
+
+    Other projects draw on the same allowance, so silently pushing past it would land on
+    someone else's invoice. Failing loudly is the only honest option.
+    """
+    from achizitii import r2
+
+    for key, value in (
+        ("R2_ACCOUNT_ID", "a"), ("R2_ACCESS_KEY_ID", "b"),
+        ("R2_SECRET_ACCESS_KEY", "c"), ("R2_BUCKET", "d"),
+    ):
+        monkeypatch.setenv(key, value)
+    monkeypatch.setattr(r2, "BUDGET_GB", 0.000001)
+
+    big = tmp_path / "big.parquet"
+    big.write_bytes(b"0" * 4096)
+
+    boto3 = pytest.importorskip("boto3")
+    assert boto3 is not None
+    with pytest.raises(RuntimeError, match="budget"):
+        r2.upload([big], tmp_path)
