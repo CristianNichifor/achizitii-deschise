@@ -73,9 +73,31 @@ SELECT a.an,
        a.cpv_denumire,
        a.categorie,
        a.autoritate,
-       a.autoritate_cui,
+       -- Normalised HERE, once, so every aggregate and every indicator downstream sees
+       -- one spelling of one organisation.
+       --
+       -- The exports carry the same fiscal code both ways: "1590120" and "RO1590120".
+       -- Grouped by the raw value, Romsilva became two institutions with 22,271 and
+       -- 11,969 acquisitions, and the site's entity file — which matches a CUI exactly,
+       -- so that 4340536 does not pull in 14340536 — showed whichever half the reader
+       -- happened to search for. Measured across the archive: 389 institutions split in
+       -- two, 800,135 acquisitions and 4.44 billion RON on the wrong side of a prefix.
+       --
+       -- This file already knew. The county join below normalised exactly this way to
+       -- match ANAF, two hundred lines after the aggregates grouped by the raw column;
+       -- the same module both knew and did not know. That join is now redundant and says
+       -- so.
+       --
+       -- Spelling only. `firme.normalise_cui` additionally REJECTS codes outside 2-10
+       -- digits, and that is a judgement about validity rather than about spelling —
+       -- applying it here would silently drop rows from every count on the site under
+       -- the guise of deduplication. A short code stays a short code; it just stops
+       -- being two of them.
+       nullif(ltrim(regexp_replace(a.autoritate_cui, '[^0-9]', '', 'g'), '0'), '')
+           AS autoritate_cui,
        a.furnizor,
-       a.furnizor_cui,
+       nullif(ltrim(regexp_replace(a.furnizor_cui, '[^0-9]', '', 'g'), '0'), '')
+           AS furnizor_cui,
        TRY_CAST(a.valoare_ron AS DOUBLE) AS v,
        CASE WHEN regexp_matches(a.cpv_denumire, '{numeric_label}')
             THEN NULL ELSE a.cpv_denumire END AS denumire_reala,
@@ -223,8 +245,11 @@ SELECT ad.an,
        ad.v,
        ad.plauzibil
 FROM ad
-JOIN firme_geo fa ON fa.cui = ltrim(regexp_replace(ad.autoritate_cui, '[^0-9]', '', 'g'), '0')
-JOIN firme_geo ff ON ff.cui = ltrim(regexp_replace(ad.furnizor_cui, '[^0-9]', '', 'g'), '0')
+-- `ad` normalises both codes now, so these join on the column directly. The stripping
+-- that used to happen here is where the fix came from: this join has always matched ANAF
+-- on the normalised code while the aggregates grouped on the raw one.
+JOIN firme_geo fa ON fa.cui = ad.autoritate_cui
+JOIN firme_geo ff ON ff.cui = ad.furnizor_cui
 """
 
 DATASETS = (
@@ -531,20 +556,54 @@ UNIT_PRICE_DATASETS = (
             "contributed, so a wide spread is visible rather than hidden."
         ),
         sql=f"""
-        SELECT denumire_key, um, marime_pachet,
+        -- `cpv_principal` used to be mode(cpv), which is not deterministic: where a
+        -- group's codes appear the same number of times, DuckDB returns whichever the
+        -- scan reached first. Measured on the published archive — the same query, the
+        -- same data, the same process, three times — 26 of the 472 multi-code groups
+        -- came back different on every run. Every republish therefore produced a diff
+        -- of rows nobody had changed, which is noise in a repository whose claim is
+        -- that the figures regenerate from the data, and it hides the changes that are
+        -- real. This PR's own diff was 92 such rows.
+        --
+        -- The most frequent code, ties broken by the lowest. On the 21,444 groups with
+        -- a clear winner this is exactly what mode() returned; on the 274 that tie it
+        -- returns the same answer every time instead of a coin flip.
+        WITH per_cpv AS (
+            SELECT denumire_key, um, marime_pachet, cpv, count(*) AS k
+            FROM preturi
+            WHERE comparabil AND denumire_key IS NOT NULL AND denumire_key <> ''
+            GROUP BY 1, 2, 3, 4
+        ),
+        principal AS (
+            SELECT denumire_key, um, marime_pachet, cpv AS cpv_principal
+            FROM (
+                SELECT *, row_number() OVER (
+                            PARTITION BY denumire_key, um, marime_pachet
+                            ORDER BY k DESC, cpv ASC) AS rn
+                FROM per_cpv
+            )
+            WHERE rn = 1
+        )
+        SELECT p.denumire_key, p.um, p.marime_pachet,
                count(*)                                        AS n,
-               count(DISTINCT cpv)                             AS coduri,
-               mode(cpv)                                       AS cpv_principal,
-               count(DISTINCT autoritate_cui)                  AS autoritati,
+               count(DISTINCT p.cpv)                           AS coduri,
+               any_value(pr.cpv_principal)                     AS cpv_principal,
+               count(DISTINCT p.autoritate_cui)                AS autoritati,
                CASE WHEN count(*) >= {MIN_GROUP_FOR_MEDIAN}
-                    THEN round(median(pret_unitar_ron), 2) END AS mediana_ron,
+                    THEN round(median(p.pret_unitar_ron), 2) END AS mediana_ron,
                CASE WHEN count(*) >= {MIN_GROUP_FOR_MEDIAN}
-                    THEN round(quantile_cont(pret_unitar_ron, 0.10), 2) END AS p10_ron,
+                    THEN round(quantile_cont(p.pret_unitar_ron, 0.10), 2) END AS p10_ron,
                CASE WHEN count(*) >= {MIN_GROUP_FOR_MEDIAN}
-                    THEN round(quantile_cont(pret_unitar_ron, 0.90), 2) END AS p90_ron
-        FROM preturi
-        WHERE comparabil AND denumire_key IS NOT NULL AND denumire_key <> ''
-        GROUP BY denumire_key, um, marime_pachet
+                    THEN round(quantile_cont(p.pret_unitar_ron, 0.90), 2) END AS p90_ron
+        FROM preturi p
+        -- IS NOT DISTINCT FROM, not `=`: a group with no unit of measure and no pack
+        -- size is a real group, and `=` would drop every one of them.
+        LEFT JOIN principal pr
+               ON pr.denumire_key = p.denumire_key
+              AND pr.um IS NOT DISTINCT FROM p.um
+              AND pr.marime_pachet IS NOT DISTINCT FROM p.marime_pachet
+        WHERE p.comparabil AND p.denumire_key IS NOT NULL AND p.denumire_key <> ''
+        GROUP BY p.denumire_key, p.um, p.marime_pachet
         """,
     ),
     Dataset(
