@@ -281,3 +281,158 @@ def test_county_dataset_is_descriptive_not_an_indicator() -> None:
     for word in ("suspect", "risc", "alert", "incalcare", "flag"):
         assert word not in lowered, f"{word!r} implies a judgement this data cannot support"
     assert "pct_local" in judete.sql and "n_local" in judete.sql
+
+
+def _ad(con, rows: list[tuple]) -> None:
+    """Register a minimal `achizitii_directe` and the `ad` view over it."""
+    con.execute("""
+        CREATE TABLE achizitii_directe (
+            an SMALLINT, cpv VARCHAR, cpv_denumire VARCHAR, categorie VARCHAR,
+            autoritate VARCHAR, autoritate_cui VARCHAR,
+            furnizor VARCHAR, furnizor_cui VARCHAR, valoare_ron VARCHAR)
+    """)
+    con.executemany(
+        "INSERT INTO achizitii_directe VALUES (?,?,?,?,?,?,?,?,?)", rows
+    )
+    con.execute(BASE_VIEW.format(
+        thresholds=ceilings_by_category_sql(),
+        numeric_label=r"^\\d+$",
+    ))
+
+
+def test_one_organisation_is_not_two_spellings_of_its_fiscal_code() -> None:
+    """The exports carry the same code both ways: "1590120" and "RO1590120".
+
+    Grouped by the raw value, Romsilva became two institutions with 22,271 and 11,969
+    acquisitions, and the site's entity file — which matches a CUI exactly, so that
+    4340536 does not pull in 14340536 — showed whichever half the reader happened to
+    search for. Measured across the published archive before this fix: 389 institutions
+    split in two, 800,135 acquisitions and 4.44 billion RON on the wrong side of a prefix.
+
+    This module already knew. The county join normalised exactly this way to match ANAF,
+    two hundred lines after the aggregates grouped on the raw column.
+    """
+    import duckdb
+
+    con = duckdb.connect()
+    _ad(con, [
+        (2024, "03222111-4", "Banane", "furnizare",
+         "PRIMARIA X", "RO1590120", "F SRL", "RO2816464", "100"),
+        (2024, "03222111-4", "Banane", "furnizare",
+         "PRIMARIA X", "1590120", "F SRL", "2816464", "150"),
+        (2024, "03222111-4", "Banane", "furnizare",
+         "PRIMARIA X", " 1590120 ", "F SRL", "0002816464", "200"),
+    ])
+    aut = next(d for d in DATASETS if d.name == "autoritati_an")
+    rows = con.execute(aut.sql).fetchall()
+    assert len(rows) == 1, f"one authority, one row — got {rows}"
+    assert rows[0][1] == "1590120", "the normalised spelling is the one published"
+    assert rows[0][3] == 3, "and it keeps every acquisition"
+
+    furn = next(d for d in DATASETS if d.name == "furnizori_an")
+    frows = con.execute(furn.sql).fetchall()
+    assert len(frows) == 1, f"one supplier, one row — got {frows}"
+    assert frows[0][1] == "2816464", "leading zeros are spelling, not identity"
+    con.close()
+
+
+def test_normalisation_is_about_spelling_not_validity() -> None:
+    """`firme.normalise_cui` also REJECTS codes outside 2-10 digits. That is a judgement
+    about validity, and applying it in the base view would silently drop rows from every
+    count on the site under the guise of deduplication. A short code stays a short code;
+    it just stops being two of them.
+    """
+    import duckdb
+
+    con = duckdb.connect()
+    _ad(con, [
+        (2024, "03222111-4", "Banane", "furnizare", "MICA", "7", "F", "9", "100"),
+        (2024, "03222111-4", "Banane", "furnizare", "FARA", "", "F", "9", "100"),
+    ])
+    rows = con.execute(
+        "SELECT autoritate_cui, count(*) FROM ad GROUP BY 1 ORDER BY 1 NULLS LAST"
+    ).fetchall()
+    assert ("7", 1) in rows, "a one-digit code is kept, not dropped"
+    assert (None, 1) in rows, "an empty code becomes NULL rather than an empty string"
+    con.close()
+
+
+def test_the_county_join_no_longer_re_normalises() -> None:
+    """It normalised to match ANAF while the aggregates grouped on the raw column — the
+    same module both knowing and not knowing. `ad` does it once now."""
+    source = Path("src/achizitii/publish.py").read_text(encoding="utf-8")
+    assert "JOIN firme_geo fa ON fa.cui = ad.autoritate_cui" in source
+    assert "JOIN firme_geo ff ON ff.cui = ad.furnizor_cui" in source
+    # Exactly twice: once for each column, in the base view and nowhere else.
+    assert source.count("regexp_replace(a.autoritate_cui") == 1
+    assert source.count("regexp_replace(a.furnizor_cui") == 1
+
+
+def test_the_principal_cpv_is_chosen_deterministically() -> None:
+    """`mode(cpv)` returned whichever tied code the scan reached first.
+
+    Measured on the published archive — the same query, the same data, the same process,
+    three times — 26 of the 472 multi-code groups came back different on every run. Every
+    republish therefore produced a diff of rows nobody had changed, which is noise in a
+    repository whose claim is that the figures regenerate from the data rather than being
+    written by hand, and it hides the changes that are real: this fix's own data diff was
+    92 such rows before it landed.
+
+    Most frequent code, ties broken by the lowest. Where a group has a clear winner this
+    is exactly what mode() returned.
+    """
+    import duckdb
+
+    from achizitii.publish import UNIT_PRICE_DATASETS
+
+    produs = next(d for d in UNIT_PRICE_DATASETS if d.name == "preturi_produs")
+    # SQL comments stripped first. The comment above the replacement names what it
+    # replaced, so a bare substring search finds "mode(cpv)" in the explanation of why
+    # mode(cpv) is gone. That has now happened four times in this suite.
+    code = "\n".join(
+        line for line in produs.sql.splitlines() if not line.lstrip().startswith("--")
+    )
+    assert "mode(cpv)" not in code, "mode() is not deterministic on ties"
+    assert "ORDER BY k DESC, cpv ASC" in code
+
+    con = duckdb.connect()
+    con.execute("""
+        CREATE TABLE preturi AS SELECT * FROM (VALUES
+            -- one group, two codes, one occurrence each: a tie, and the whole point
+            ('creion', 'buc', NULL, '30192125-3', 2.0, TRUE, 'A'),
+            ('creion', 'buc', NULL, '30192121-5', 3.0, TRUE, 'B'),
+            -- one group with a clear winner, which must not move
+            ('hartie', 'top', NULL, '30197644-2', 20.0, TRUE, 'A'),
+            ('hartie', 'top', NULL, '30197644-2', 22.0, TRUE, 'B'),
+            ('hartie', 'top', NULL, '30197630-1', 25.0, TRUE, 'C')
+        ) t(denumire_key, um, marime_pachet, cpv, pret_unitar_ron, comparabil, autoritate_cui)
+    """)
+    got = {r[0]: r[1] for r in con.execute(
+        f"SELECT denumire_key, cpv_principal FROM ({produs.sql})").fetchall()}
+    assert got["creion"] == "30192121-5", "a tie resolves to the lowest code, every time"
+    assert got["hartie"] == "30197644-2", "a clear winner is still the winner"
+    con.close()
+
+
+def test_a_group_without_a_unit_keeps_its_principal_cpv() -> None:
+    """The join onto the per-code ranking matches on unit and pack size, both of which
+    are legitimately NULL — "no unit of measure" is a real group. With `=` instead of
+    IS NOT DISTINCT FROM, every one of those groups would lose its code."""
+    import duckdb
+
+    from achizitii.publish import UNIT_PRICE_DATASETS
+
+    produs = next(d for d in UNIT_PRICE_DATASETS if d.name == "preturi_produs")
+    assert "IS NOT DISTINCT FROM p.um" in produs.sql
+    assert "IS NOT DISTINCT FROM p.marime_pachet" in produs.sql
+
+    con = duckdb.connect()
+    con.execute("""
+        CREATE TABLE preturi AS SELECT * FROM (VALUES
+            ('servicii', NULL, NULL, '79000000-4', 100.0, TRUE, 'A'),
+            ('servicii', NULL, NULL, '79000000-4', 120.0, TRUE, 'B')
+        ) t(denumire_key, um, marime_pachet, cpv, pret_unitar_ron, comparabil, autoritate_cui)
+    """)
+    rows = con.execute(f"SELECT cpv_principal FROM ({produs.sql})").fetchall()
+    assert rows == [("79000000-4",)], f"a unit-less group lost its code: {rows}"
+    con.close()
