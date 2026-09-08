@@ -53,7 +53,14 @@
   #run:disabled { opacity:.5; cursor:progress; }
   .tabs button[aria-selected="true"] { font-weight:600; }
   #status { color:var(--muted); font-size:.85rem; margin:.75rem 0; }
-  #note { font-size:.85rem; margin:.35rem 0 .75rem; color:var(--warn); }
+  /* Explanatory, not alarming. This line carries the methodology note for whichever tab
+     is open — "a group is CPV + product + unit", "spending is not itself an indication" —
+     and it was rendered in the warning colour on every one of them. If everything is
+     amber then nothing is, and the page loses the ability to say something is actually
+     wrong. Amber stays with the standing caveat above the tabs, which is a caveat. */
+  #note { font-size:.85rem; margin:.35rem 0 .75rem; color:var(--muted);
+          border-left:2px solid var(--line); padding-left:.6rem; }
+  #note:empty { display:none; }
   .wrap { overflow-x:auto; border:1px solid var(--line); border-radius:8px; }
   table { border-collapse:collapse; width:100%; font-size:.87rem; }
   th, td { padding:.45rem .7rem; text-align:left; border-bottom:1px solid var(--line); white-space:nowrap; }
@@ -241,7 +248,11 @@ function ron(v) {
     x.toLocaleString('ro-RO', { minimumFractionDigits: d, maximumFractionDigits: d });
   if (abs >= 1e9) return `${fixed(n / 1e9, 2)} mld`;
   if (abs >= 1e6) return `${fixed(n / 1e6, 1)} mil`;
-  return n.toLocaleString('ro-RO');
+  // Two decimals, always. The default gave whatever the value happened to carry, so a
+  // median column read 2.800 / 831,6 / 32.984,17 — three different shapes, decimal points
+  // not aligned, in a column whose entire purpose is comparing one figure against
+  // another. Combined with tabular-nums the digits now line up vertically.
+  return fixed(n, 2);
 }
 
 // Every view names the columns it selects rather than using *, so a schema change
