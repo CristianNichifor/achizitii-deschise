@@ -10,7 +10,7 @@ Everything else is offline mapping — no network in the test suite.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 
 import pytest
 
@@ -39,8 +39,39 @@ def test_maps_the_documented_fields() -> None:
     assert m.decident == "Ramona-Ioana Bruynseels"
     assert m.functie == "Deputat"
     assert m.institutie == "Camera Deputaților"
-    assert m.data_intalnirii == datetime(2026, 9, 9, tzinfo=UTC)
-    assert m.data_publicarii == datetime(2026, 9, 5, 15, 13, tzinfo=UTC)
+    # Naive on purpose, here and below: the mapped values are naive UTC by design, and an
+    # aware expectation would not compare equal to one. DTZ001 is a good default rule and
+    # a wrong one for exactly this assertion.
+    assert m.data_intalnirii == datetime(2026, 9, 9)  # noqa: DTZ001
+    assert m.data_publicarii == datetime(2026, 9, 5, 15, 13)  # noqa: DTZ001
+
+
+def test_timestamps_are_naive_utc_so_the_output_is_machine_independent() -> None:
+    """Regression: the published file used to depend on where it was built.
+
+    `fromisoformat` returns an AWARE datetime for the offset-bearing strings the register
+    sends. The Parquet column is a naive TIMESTAMP, and DuckDB fills a naive column from
+    an aware value by shifting it into the session timezone — so this meeting was stored
+    at midnight by a UTC runner and at 02:00 by a CEST laptop, from identical input.
+
+    Asserting naiveness here rather than round-tripping through DuckDB is deliberate: a
+    round-trip test would pass on a UTC CI runner no matter what the code did, and so
+    would not have caught this.
+    """
+    m = to_meeting(RECORD)
+    assert m.data_intalnirii is not None and m.data_publicarii is not None
+    assert m.data_intalnirii.tzinfo is None
+    assert m.data_publicarii.tzinfo is None
+
+
+def test_offsets_are_converted_to_utc_not_discarded() -> None:
+    """A non-UTC offset must move the instant, not be dropped from it.
+
+    18:13+03:00 is the same moment as 15:13Z. Truncating the offset instead of applying
+    it would silently shift this meeting three hours later.
+    """
+    m = to_meeting({**RECORD, "date_entered": "2026-09-05T18:13:00+03:00"})
+    assert m.data_publicarii == datetime(2026, 9, 5, 15, 13)  # noqa: DTZ001
 
 
 def test_empty_strings_become_null_not_empty() -> None:
