@@ -50,21 +50,21 @@
       "name": "preturi_unitare",
       "file": "preturi_unitare.parquet",
       "rows": 17209,
-      "bytes": 328868,
+      "bytes": 328113,
       "description": "Median unit price per product group. A group is CPV + product key + unit + pack size; percentiles are null below n=5. Never compare across units or pack sizes."
     },
     {
       "name": "preturi_produs",
       "file": "preturi_produs.parquet",
       "rows": 16778,
-      "bytes": 319670,
+      "bytes": 320291,
       "description": "The same product across CPV codes: grouped on description, unit and pack size while the code is allowed to vary. `coduri` says how many CPV codes contributed, so a wide spread is visible rather than hidden."
     },
     {
       "name": "preturi_judet",
       "file": "preturi_judet.parquet",
       "rows": 18685,
-      "bytes": 338127,
+      "bytes": 338521,
       "description": "The same groups broken down by county, for comparing what different buyers paid for the same thing. Suppressed below n=5 per county."
     }
   ],
@@ -239,9 +239,7 @@
       "temei": "Legea 98/2016, art. 7 — plafoane pentru achiziția directă"
     }
   ],
-  "arhivat_azi": [
-    "preturi/an=2026/luna=07/2026-07-04.parquet"
-  ],
+  "arhivat_azi": [],
   "preturi_unitare": {
     "randuri": 33459,
     "zile_arhivate": 6,
