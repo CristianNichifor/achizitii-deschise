@@ -24,6 +24,9 @@ jobs:
       - uses: actions/checkout@v4
       - run: npm ci --ignore-scripts
       - run: npm run test:browser
+        env:
+          # Firefox requires HOME to belong to the container's current user.
+          HOME: /root
       - uses: actions/upload-artifact@v4
         if: always()
         with:
