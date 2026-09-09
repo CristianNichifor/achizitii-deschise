@@ -50,21 +50,21 @@
       "name": "preturi_unitare",
       "file": "preturi_unitare.parquet",
       "rows": 22355,
-      "bytes": 460961,
+      "bytes": 446839,
       "description": "Median unit price per product group. A group is CPV + product key + unit + pack size; percentiles are null below n=5. Never compare across units or pack sizes."
     },
     {
       "name": "preturi_produs",
       "file": "preturi_produs.parquet",
       "rows": 21718,
-      "bytes": 447597,
+      "bytes": 435619,
       "description": "The same product across CPV codes: grouped on description, unit and pack size while the code is allowed to vary. `coduri` says how many CPV codes contributed, so a wide spread is visible rather than hidden."
     },
     {
       "name": "preturi_judet",
       "file": "preturi_judet.parquet",
       "rows": 24636,
-      "bytes": 495865,
+      "bytes": 467868,
       "description": "The same groups broken down by county, for comparing what different buyers paid for the same thing. Suppressed below n=5 per county."
     }
   ],
@@ -291,10 +291,10 @@
   },
   "ruti": {
     "file": "ruti.parquet",
-    "intalniri": 666,
+    "intalniri": 668,
     "din": "2025-10-13",
     "pana_la": "2026-09-09",
-    "cu_concluzii_publicate": 97,
+    "cu_concluzii_publicate": 98,
     "nota": "Registrul întâlnirilor dintre decidenți și terți. O întâlnire este legală, iar registrul există tocmai pentru a o face vizibilă — prezența aici nu spune nimic despre vreun contract."
   },
   "panorama": {
