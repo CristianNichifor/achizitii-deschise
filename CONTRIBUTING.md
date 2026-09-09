@@ -1,5 +1,8 @@
 # Contributing
 
+For shared-control work, run the [real-browser adoption baseline](docs/BROWSER_BASELINE.md)
+alongside the Python checks. It does not change the site's static deployment.
+
 ## The most useful contribution is not code
 
 Extraction is solved — SEAP hands us structured line items. **Comparability** is the open
