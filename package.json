@@ -1,0 +1,8 @@
+{
+  "name": "achizitii-browser-checks",
+  "private": true,
+  "type": "module",
+  "description": "Development-only browser regression checks; the static site has no npm build.",
+  "scripts": { "test:browser": "playwright test" },
+  "devDependencies": { "@playwright/test": "1.63.0" }
+}
