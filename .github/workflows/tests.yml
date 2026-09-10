@@ -41,6 +41,17 @@ jobs:
 
       - run: pip install -e ".[dev]"
 
+      # The aggregates are no longer committed, and a dozen tests assert things about them —
+      # test_price_drilldown reads the manifest unconditionally, and several others carry a
+      # `skipif(not is_file())` that would turn into a silent pass. Fetching the bundle keeps
+      # them running, and turns them into a check on the *released* bundle: if a publish went
+      # out without its release being refreshed, the manifest and the committed price archive
+      # disagree and test_price_drilldown says so.
+      - name: Fetch the bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/fetch_bundle.sh
+
       - name: Lint
         run: ruff check .
 

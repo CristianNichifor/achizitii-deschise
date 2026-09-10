@@ -33,9 +33,19 @@ build:
 1. `achizitii publish` writes `site/data/` locally, as before.
 2. `scripts/release_bundle.sh` uploads it as a `bundle-<date>` release asset — everything
    under `site/data` **except** `site/data/preturi/**`.
-3. `.github/workflows/pages.yml` downloads the newest `bundle-*` release when `site/data`
-   is not in the checkout, extracts it, and deploys exactly what it would have deployed
-   before.
+3. `scripts/fetch_bundle.sh` downloads the newest `bundle-*` release when `site/data` is not
+   already present. Both `pages.yml` and `tests.yml` call it.
+
+**The tests fetch it too, and that is the point.** A dozen tests assert things about the
+bundle; `test_price_drilldown` reads the manifest unconditionally and several others carry a
+`skipif(not is_file())` that would have quietly become a pass. Fetching keeps them running,
+and upgrades them: they now check the **released** bundle against the **committed** price
+archive, so publishing without refreshing the release makes `test_price_drilldown` fail
+instead of the site 404ing on a file the manifest names.
+
+Result on the tracked tree: **20.0 MB → 0.8 MB**, with the 1.4 MB price archive counted
+separately. The 302 MB of history stays where it is — removing it means rewriting every
+commit, which is a decision of its own and not one this change makes.
 
 `site/data/preturi/**` is deliberately excluded and stays in git. Those are the collected
 daily prices: written once, never rewritten, ~0.4 MB per collected day, and the only copy

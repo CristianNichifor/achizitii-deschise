@@ -43,3 +43,14 @@ site/data/preturi-lunar/
 
 # State IS committed (it is small and is the resume ledger)
 !state/
+
+# The published bundle. Derived: every `achizitii publish` rebuilds it whole, and git keeps
+# each rebuild forever — three rollups had accumulated 271 MB of a 302 MB pack. It ships as a
+# `bundle-*` release asset instead (scripts/release_bundle.sh), fetched by pages.yml and
+# tests.yml (scripts/fetch_bundle.sh). See docs/storage.md.
+#
+# site/data/preturi/ is the exception and stays tracked: collected daily prices, written once
+# and never rewritten, and the only copy that exists — unit prices cannot be reconstructed
+# retroactively because the bulk exports carry no quantities.
+site/data/*
+!site/data/preturi/
