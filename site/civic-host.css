@@ -1,0 +1,92 @@
+.civic-scope {
+  --civic-bg: var(--paper);
+  --civic-surface: var(--paper);
+  --civic-raised: var(--sub);
+  --civic-text: var(--ink);
+  --civic-muted: var(--muted);
+  --civic-border: var(--line);
+  --civic-action: var(--accent);
+  --civic-action-hover: var(--accent);
+  --civic-on-action: var(--on-accent);
+  --civic-focus: var(--accent);
+  --civic-accent: var(--warn);
+  --civic-danger: var(--warn);
+  --civic-control-height: 36px;
+  --civic-space-2: .25rem;
+}
+
+.civic-scope .civic-field label {
+  font-size: .75rem;
+  font-weight: 400;
+  margin-bottom: .25rem;
+}
+.civic-scope .civic-field {
+  gap: 0;
+}
+.civic-scope .civic-field .civic-input,
+.civic-scope .civic-field .civic-select.civic-select--native {
+  padding: .45rem .6rem;
+}
+.civic-scope .civic-field .civic-select.civic-select--native {
+  padding-right: 1.8rem;
+}
+.civic-scope .hero .civic-field {
+  flex: 1;
+}
+.civic-scope .hero .civic-input {
+  padding: .7rem .9rem;
+  font-size: 1rem;
+}
+.civic-scope .hero .civic-button {
+  padding: .7rem 1.4rem;
+  font-size: 1rem;
+}
+.civic-scope .subnav.civic-field {
+  display: flex;
+  gap: .6rem;
+}
+.civic-scope .subnav .civic-select {
+  width: auto;
+}
+.civic-scope .subnav.civic-field label {
+  margin: 0;
+}
+.civic-scope .subnav[hidden],
+.civic-scope .civic-pagination[hidden] {
+  display: none;
+}
+.civic-scope .civic-pagination {
+  justify-content: flex-start;
+}
+.civic-scope .share .civic-button,
+.civic-scope .pager .civic-button {
+  padding: .35rem .7rem;
+  font-size: .82rem;
+  color: var(--accent);
+}
+.civic-scope .civic-button:disabled {
+  opacity: 1;
+  color: var(--muted);
+}
+.civic-scope .hero .civic-button:disabled {
+  background: var(--sub);
+  color: var(--muted);
+}
+.civic-scope #run:disabled {
+  opacity: 1;
+  background: var(--sub);
+  color: var(--muted);
+}
+.civic-scope .hero .civic-button:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--on-accent);
+  filter: brightness(.95);
+}
+.civic-scope #status.civic-loading {
+  color: var(--muted);
+}
+@media (max-width: 640px) {
+  .civic-scope .civic-table-scroll {
+    overflow-x: visible;
+  }
+}

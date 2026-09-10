@@ -1,0 +1,7 @@
+@import "./styles.css";
+
+/* A plain select keeps the browser arrow; React NativeSelect owns its chevron. */
+.civic-scope .civic-field .civic-select.civic-select--native {
+  appearance: auto;
+  padding-right: 0.75rem;
+}
