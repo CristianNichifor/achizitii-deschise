@@ -47,28 +47,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Newest bundle-* release wins. `gh release list` is already newest-first, so this
-      # picks up a bundle published minutes ago without anyone editing a tag in here.
-      - name: Fetch the bundle when it is not in the checkout
-        if: hashFiles('site/data/manifest.json') == ''
+      # Shared with tests.yml, which needs the same files to assert anything about them.
+      - name: Fetch the bundle
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          tag=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 30 --json tagName \
-                  -q '[.[].tagName | select(startswith("bundle-"))] | first')
-          if [ -z "$tag" ] || [ "$tag" = "null" ]; then
-            echo "::error::no bundle-* release to fetch, and site/data is not in the checkout."
-            echo "Run 'scripts/release_bundle.sh' locally after 'achizitii publish'."
-            exit 1
-          fi
-          echo "fetching $tag"
-          gh release download "$tag" --repo "$GITHUB_REPOSITORY" \
-            --pattern 'bundle-*.tar.gz' --dir "$RUNNER_TEMP"
-          # The archive holds paths relative to site/, so this lands them back under site/data.
-          tar -xzf "$RUNNER_TEMP"/bundle-*.tar.gz -C site
-          echo "extracted:"
-          du -sh site/data
+        run: ./scripts/fetch_bundle.sh
 
       # Deploying an empty shell is worse than not deploying: the page would load,
       # report a missing manifest, and look like a site that is merely broken.
