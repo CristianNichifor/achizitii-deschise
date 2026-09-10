@@ -5,10 +5,20 @@ name: pages
 # The bundle under site/data is NOT built here. data.gov.ro is unreachable from GitHub
 # and Azure IP ranges — four 60-second connect timeouts against 0.93s from a local
 # machine — which is also why bulk.yml has no schedule. So the source data cannot be
-# fetched in CI, and the bundle is generated locally with `achizitii publish` and
-# committed. See docs/sources.md.
+# fetched in CI; it is generated locally with `achizitii publish`. See docs/sources.md.
 #
-# If that ever changes, this workflow gains a build step and the bundle leaves git.
+# Being unbuildable here does not mean it has to be *committed*, though, and that is the
+# part that turned out to cost something. `docs/storage.md` says git keeps every version
+# of a file forever — true of the line items, which is why they went to R2, and equally
+# true of the aggregates, which stayed. Measured 2026-09-10: three regenerated rollups
+# account for 271 MB of a 302 MB pack, from files whose current versions total 13.7 MB.
+#
+# So the bundle is published as a release asset and fetched here instead. It still ends up
+# in the Pages artifact, unchanged, which is what `docs/storage.md` requires: ordinary
+# reads keep hitting Pages and never touch R2.
+#
+# The fetch is skipped while the bundle is still in the checkout. That ordering is on
+# purpose — this path gets exercised by a real deploy before anything is deleted from git.
 
 on:
   push:
@@ -36,6 +46,29 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+
+      # Newest bundle-* release wins. `gh release list` is already newest-first, so this
+      # picks up a bundle published minutes ago without anyone editing a tag in here.
+      - name: Fetch the bundle when it is not in the checkout
+        if: hashFiles('site/data/manifest.json') == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 30 --json tagName \
+                  -q '[.[].tagName | select(startswith("bundle-"))] | first')
+          if [ -z "$tag" ] || [ "$tag" = "null" ]; then
+            echo "::error::no bundle-* release to fetch, and site/data is not in the checkout."
+            echo "Run 'scripts/release_bundle.sh' locally after 'achizitii publish'."
+            exit 1
+          fi
+          echo "fetching $tag"
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" \
+            --pattern 'bundle-*.tar.gz' --dir "$RUNNER_TEMP"
+          # The archive holds paths relative to site/, so this lands them back under site/data.
+          tar -xzf "$RUNNER_TEMP"/bundle-*.tar.gz -C site
+          echo "extracted:"
+          du -sh site/data
 
       # Deploying an empty shell is worse than not deploying: the page would load,
       # report a missing manifest, and look like a site that is merely broken.
