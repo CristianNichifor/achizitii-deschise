@@ -1,0 +1,16 @@
+.civic-usr {
+  --civic-font-sans: var(--usr-font-sans);
+  --civic-bg: var(--usr-surface-muted);
+  --civic-surface: var(--usr-surface);
+  --civic-raised: var(--usr-surface-raised);
+  --civic-text: var(--usr-text);
+  --civic-muted: var(--usr-text-muted);
+  --civic-border: var(--usr-line-strong);
+  --civic-action: var(--usr-navy);
+  --civic-action-hover: var(--usr-blue-mid);
+  --civic-on-action: var(--usr-on-navy);
+  --civic-focus: var(--usr-focus);
+  --civic-accent: var(--usr-accent);
+  --civic-danger: var(--usr-danger);
+  --civic-radius: var(--usr-radius-control);
+}

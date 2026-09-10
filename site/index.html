@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="vendor/civic-ui/native.css">
 <title>achizitii-deschise — achiziții publice din România, interogabile în browser</title>
 <!-- Inline, because every visit was issuing a request for /favicon.ico and collecting a
      404 — the only console error left on the published site. A data URI keeps the page a
@@ -362,16 +363,20 @@
     .viz .xrow span:nth-last-child(even) { visibility:hidden; }
   }
 </style>
+<link rel="stylesheet" href="civic-host.css">
 </head>
 <body>
-<main>
+<main class="civic-scope">
   <h1>Achiziții publice din România</h1>
   <p class="sub" id="scale">Date deschise despre banii cheltuiți de instituțiile publice.</p>
 
   <form class="hero" id="hero" onsubmit="return false">
-    <input id="q" autocomplete="off"
-           placeholder="Caută o autoritate, o firmă, un CUI sau un produs…">
-    <button id="run" disabled>Caută</button>
+    <div class="civic-field">
+      <input id="q" class="civic-input" autocomplete="off"
+             aria-label="Caută o autoritate, o firmă, un CUI sau un produs"
+             placeholder="Caută o autoritate, o firmă, un CUI sau un produs…">
+    </div>
+    <button id="run" class="civic-button civic-button--primary" type="button" disabled>Caută</button>
   </form>
   <p class="hint" id="hint"></p>
 
@@ -389,43 +394,43 @@
   </details>
 
   <nav class="tabs" id="tabs" role="tablist"></nav>
-  <div class="subnav" id="subnav" hidden>
+  <div class="subnav civic-field" id="subnav" hidden>
     <label for="semnal">Semnal</label>
-    <select id="semnal"></select>
+    <select id="semnal" class="civic-select civic-select--native"></select>
     <span id="semnal-temei"></span>
   </div>
   <!-- Four views answered the same question — "tell me about an organisation" — from
        four tabs a reader had to choose between before knowing what any of them held.
        They are now one tab and this selector, the same shape the signals already use. -->
-  <div class="subnav" id="subnav-entitate" hidden>
+  <div class="subnav civic-field" id="subnav-entitate" hidden>
     <label for="aspect">Despre</label>
-    <select id="aspect"></select>
+    <select id="aspect" class="civic-select civic-select--native"></select>
   </div>
 
-  <div class="subnav" id="subnav-facet" hidden>
+  <div class="subnav civic-field" id="subnav-facet" hidden>
     <label for="facet">Instituție</label>
-    <select id="facet"></select>
+    <select id="facet" class="civic-select civic-select--native"></select>
   </div>
 
   <div class="controls">
-    <div>
+    <div class="civic-field">
       <label for="an">An</label>
-      <select id="an"><option value="">— toți —</option></select>
+      <select id="an" class="civic-select civic-select--native"><option value="">— toți —</option></select>
     </div>
-    <div id="wrap-baza">
+    <div id="wrap-baza" class="civic-field">
       <label for="baza">Ajustare inflație</label>
-      <select id="baza"><option value="">— sume nominale —</option></select>
+      <select id="baza" class="civic-select civic-select--native"><option value="">— sume nominale —</option></select>
     </div>
-    <div>
+    <div class="civic-field">
       <label for="minn">n minim</label>
-      <input id="minn" type="number" value="1" min="1" size="4">
+      <input id="minn" class="civic-input" type="number" value="1" min="1" size="4">
     </div>
   </div>
 
   <!-- Matches the first booting() call, so the line does not change wording between
        the server-rendered HTML and the moment the module takes over. -->
   <p id="inapoi"><button type="button">← Înapoi la prețuri unitare</button></p>
-  <p id="status" class="boot">Se pregătește…</p>
+  <p id="status" class="civic-loading boot" role="status" aria-live="polite">Se pregătește…</p>
   <p id="note"></p>
   <!-- The entity file replaces the single results table rather than sitting beside it:
        one organisation cannot be answered with one table, because identity, purchases,
@@ -440,18 +445,18 @@
   <div id="flux"></div>
   <div class="wrap" id="wrap-out"><table id="out" class="tbl"><thead></thead><tbody></tbody></table></div>
 
-  <nav class="pager" id="pager" hidden>
-    <button type="button" id="pag-prev">← Pagina anterioară</button>
-    <span id="pag-info"></span>
-    <button type="button" id="pag-next">Pagina următoare →</button>
+  <nav class="pager civic-pagination" id="pager" aria-label="Paginarea rezultatelor" hidden>
+    <button type="button" id="pag-prev" class="civic-button">← Pagina anterioară</button>
+    <span id="pag-info" aria-live="polite"></span>
+    <button type="button" id="pag-next" class="civic-button">Pagina următoare →</button>
   </nav>
 
   <!-- The address bar now carries the whole view, but it changes silently and nobody
        watches it. Saying so is the difference between a feature and an implementation
        detail. -->
   <p class="share">
-    <button type="button" id="copiaza">Copiază linkul acestei vizualizări</button>
-    <button type="button" id="descarca"
+    <button type="button" id="copiaza" class="civic-button">Copiază linkul acestei vizualizări</button>
+    <button type="button" id="descarca" class="civic-button"
             title="Rezultatul întreg, nu doar pagina afișată. Valori brute: date ISO, zecimale cu punct.">Descarcă CSV</button>
     <span id="copiat" role="status"></span>
   </p>
@@ -474,14 +479,14 @@
 import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0/+esm';
 
 const $ = (id) => document.getElementById(id);
-const status = (m) => { $('status').className = ''; $('status').textContent = m; };
+const status = (m) => { $('status').className = 'civic-loading'; $('status').textContent = m; };
 
 // Boot is a distinct state, not just another status line. Until the engine is up there
 // is nothing to query, so the tabs are disabled: previously a click during those seconds
 // ran selectTab, which overwrote the loading message and left an empty table with no sign
 // that anything was still happening. The page looked broken precisely when it was busiest.
 let ready = false;
-const booting = (m) => { $('status').className = 'boot'; $('status').textContent = m; };
+const booting = (m) => { $('status').className = 'civic-loading boot'; $('status').textContent = m; };
 
 // Placeholder rows, so the table area reads as "filling in" rather than "empty".
 // Deliberately the same shape as a real result: seven columns, six rows.
@@ -1846,6 +1851,7 @@ async function runPanorama() {
 // everywhere to fix it in one place.
 function makeScrollableRegionsFocusable(root = document) {
   for (const w of root.querySelectorAll('.wrap')) {
+    w.classList.add('civic-table-scroll');
     const scrolls = w.scrollWidth > w.clientWidth + 1;
     if (scrolls) {
       w.tabIndex = 0;
