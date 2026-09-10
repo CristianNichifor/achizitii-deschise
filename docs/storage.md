@@ -5,9 +5,32 @@
 | The site | GitHub Pages | Static, cached, cannot go down. Loads even if everything below is broken. |
 | Aggregates (~20 MB) | GitHub Pages, from a release asset | Small, and the common case should never depend on an external service. Delivered by release rather than by git — see below. |
 | Collected daily prices | GitHub Pages, from git | Written once, never rewritten, and the only copy that exists. Versioned on purpose. |
-| Line items (to 2.3 GB) | Cloudflare R2 | Exceeds the 1 GB Pages cap, and git keeps every version of a file forever. |
+| Line items (to 2.3 GB) | Cloudflare R2 — **planned, not live** | Exceeds the 1 GB Pages cap, and git keeps every version of a file forever. See below for what exists today. |
 | Raw SEAP JSON | Cloudflare R2 | Kept so a mapping fix never means re-downloading. Not currently retained — see below. |
 | Bulk gov Parquet (12 GB) | Local only | Rebuilt from data.gov.ro, which is unreachable from GitHub runners. |
+
+## What is actually provisioned, as of 2026-09-10
+
+Most of this document describes a design. Two parts of it are running and the rest is not,
+and the table above reads as current state, so:
+
+| | State |
+|---|---|
+| Bucket `achizitii-deschise` | exists, **3 objects** |
+| Custom domain on it | **none** |
+| CORS policy on it | **none** — the API answers `The CORS configuration does not exist` |
+| Line items published to R2 | **no** |
+| Aggregates on Pages, from a release asset | **yes** |
+| Collected daily prices in git | **yes**, 7 files, 1.4 MB |
+
+Nothing is wrong with that. The archive is seven days old because SEAP collection has been
+held since 2026-09-08 pending ADR's answer; 1.4 MB belongs on Pages, and standing up a
+custom domain and a CORS policy to serve it would be ceremony around nothing. The R2 half
+earns its keep at gigabytes, not megabytes.
+
+What matters is that the rows above are not mistaken for a thing that exists. Everything in
+"Setting it up" is still to be done, and the monthly-consolidation reasoning below is a
+design for when there are months to consolidate.
 
 ## The rule applied to the aggregates too
 
