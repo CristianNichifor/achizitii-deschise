@@ -13,6 +13,11 @@ repository:
 `achizitii publish` rewrites all three, so each publish adds roughly 20 MB that no clone
 can ever avoid downloading. Nobody notices, because no single commit is the problem.
 
+That history was rewritten out on 2026-09-10 and a clone is now 5 MB, so the numbers above
+are what the repository *was*, kept because they are the argument for this check existing.
+Ignoring a path only stops the next version being added; the ones already committed cost a
+second, irreversible decision. This check is what keeps that from being needed twice.
+
 Two kinds of file live under `site/data`, and only one of them is a mistake:
 
 - **Derived.** Everything the manifest lists, rebuilt from the archive on every publish.
