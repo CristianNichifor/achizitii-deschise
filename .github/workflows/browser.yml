@@ -22,6 +22,15 @@ jobs:
       options: --ipc=host
     steps:
       - uses: actions/checkout@v4
+
+      # playwright.config.js serves site/ and the page reads site/data over HTTP, so without
+      # this the baseline measures a page whose manifest 404s. The fetch script uses curl and
+      # python3 rather than the GitHub CLI precisely because this container has no `gh`.
+      - name: Fetch the bundle
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: ./scripts/fetch_bundle.sh
+
       - run: npm ci --ignore-scripts
       - run: npm run test:browser
         env:
