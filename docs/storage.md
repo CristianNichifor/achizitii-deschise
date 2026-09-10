@@ -67,8 +67,9 @@ archive, so publishing without refreshing the release makes `test_price_drilldow
 instead of the site 404ing on a file the manifest names.
 
 Result on the tracked tree: **20.0 MB → 0.8 MB**, with the 1.4 MB price archive counted
-separately. The 302 MB of history stays where it is — removing it means rewriting every
-commit, which is a decision of its own and not one this change makes.
+separately. The 302 MB of history was left where it was — removing it means rewriting every
+commit, which was a decision of its own and not one that change made. It was made on
+2026-09-10; see below.
 
 `site/data/preturi/**` is deliberately excluded and stays in git. Those are the collected
 daily prices: written once, never rewritten, ~0.4 MB per collected day, and the only copy
@@ -76,6 +77,53 @@ that exists — unit prices cannot be reconstructed retroactively because the bu
 carry no quantities. `scripts/check_repo_size.py` measures the two totals separately for
 exactly this reason, so a rule about the derived payload never reads as an argument for
 deleting the archive.
+
+## And then the history went too, on 2026-09-10
+
+Ignoring a path stops the next version being added; it does nothing about the versions
+already there. A clone still paid for all of them:
+
+| | Before | After |
+|---|---|---|
+| `git clone` | **327 MB** | **5 MB** |
+| Tracked tree | 2.6 MB | 2.6 MB |
+| `main`'s tree hash | `798cc8dc…` | `798cc8dc…` |
+| Price archive on `main` | 7 files | 7 files |
+| Commits on `main` | 160 | 154 |
+
+Every commit id changed. The rule was one `git filter-repo` callback:
+
+```python
+if filename.startswith(b"site/data/") and not filename.startswith(b"site/data/preturi/"):
+    return None
+return filename
+```
+
+**The trailing slash is the whole safety argument.** `site/data/preturi_unitare.parquet` is a
+derived rollup and goes; `site/data/preturi/` is the archive and stays. Names that close are
+not a good place to rely on reading the pattern correctly, so the rewrite was checked rather
+than trusted: that no ref gained a file, that everything lost was under `site/data/`, that
+nothing lost was under `site/data/preturi/`, and that `main`'s tree hash was unchanged. The
+checks were themselves tested by deliberately breaking the callback twice — once to delete
+the archive, once to delete `src/**` — and confirming each was caught.
+
+Six commits on `main` touched nothing but derived parquet, became empty, and were dropped.
+What they recorded was that a publish ran, which the release assets and the dated filenames
+in the price archive both record better.
+
+Two things worth knowing before anyone does this again:
+
+**Tags must be pushed.** `git clone` fetches tags, so a tag left pointing at the old history
+keeps the whole 323 MB reachable in every clone and the rewrite achieves nothing. The
+`bundle-*` release survives being re-pointed: its target is the branch name `main` rather
+than a commit id, and its assets are stored by GitHub outside git.
+
+**Nothing was actually destroyed.** GitHub keeps `refs/pull/*` forever, and one
+`git fetch origin '+refs/pull/*/head:refs/remotes/pr/*'` brings the clone straight back to
+326 MB with fifteen versions of `furnizori_an.parquet` in it. The rewrite took the old blobs
+out of the *default* clone path, which was the entire goal. It is the wrong tool for removing
+a secret, and it was never being used for one — everything dropped here is public and
+derived.
 
 ## Why monthly files and not daily
 
