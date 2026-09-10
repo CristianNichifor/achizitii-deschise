@@ -3,10 +3,46 @@
 | Layer | Home | Why |
 |---|---|---|
 | The site | GitHub Pages | Static, cached, cannot go down. Loads even if everything below is broken. |
-| Aggregates (~26 MB) | GitHub Pages | Small, and the common case should never depend on an external service. |
+| Aggregates (~20 MB) | GitHub Pages, from a release asset | Small, and the common case should never depend on an external service. Delivered by release rather than by git — see below. |
+| Collected daily prices | GitHub Pages, from git | Written once, never rewritten, and the only copy that exists. Versioned on purpose. |
 | Line items (to 2.3 GB) | Cloudflare R2 | Exceeds the 1 GB Pages cap, and git keeps every version of a file forever. |
 | Raw SEAP JSON | Cloudflare R2 | Kept so a mapping fix never means re-downloading. Not currently retained — see below. |
 | Bulk gov Parquet (12 GB) | Local only | Rebuilt from data.gov.ro, which is unreachable from GitHub runners. |
+
+## The rule applied to the aggregates too
+
+"Git keeps every version of a file forever" is the reason the line items went to R2. It is
+just as true of the aggregates, which stayed in git, and that is where most of this
+repository turned out to be. Measured 2026-09-10, across all history:
+
+| Path | Total in history | Versions | Current |
+|---|---|---|---|
+| `site/data/furnizori_an.parquet` | 199.9 MB | 14 | 7.8 MB |
+| `site/data/autoritati_an.parquet` | 45.2 MB | 14 | 1.9 MB |
+| `site/data/cpv_an.parquet` | 26.4 MB | 14 | 2.3 MB |
+
+271 MB of a 302 MB pack, from three files totalling 12 MB today. Every `achizitii publish`
+rewrites all three, so every publish adds ~20 MB that no clone can ever avoid downloading.
+Nothing about it looks wrong in a diff — it is one line saying a binary changed.
+
+**The aggregates stay on Pages.** That part of the reasoning below is unchanged and worth
+keeping: someone opening the site and reading totals should never depend on an external
+service or spend a Class B operation. What changes is only how the bytes reach the Pages
+build:
+
+1. `achizitii publish` writes `site/data/` locally, as before.
+2. `scripts/release_bundle.sh` uploads it as a `bundle-<date>` release asset — everything
+   under `site/data` **except** `site/data/preturi/**`.
+3. `.github/workflows/pages.yml` downloads the newest `bundle-*` release when `site/data`
+   is not in the checkout, extracts it, and deploys exactly what it would have deployed
+   before.
+
+`site/data/preturi/**` is deliberately excluded and stays in git. Those are the collected
+daily prices: written once, never rewritten, ~0.4 MB per collected day, and the only copy
+that exists — unit prices cannot be reconstructed retroactively because the bulk exports
+carry no quantities. `scripts/check_repo_size.py` measures the two totals separately for
+exactly this reason, so a rule about the derived payload never reads as an argument for
+deleting the archive.
 
 ## Why monthly files and not daily
 

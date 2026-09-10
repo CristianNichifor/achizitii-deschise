@@ -46,3 +46,8 @@ jobs:
 
       - name: Tests
         run: pytest -q
+
+      # Runs on every PR because the growth this catches never arrives in one commit —
+      # it arrives as a normal-looking "rebuild the bundle" that nobody reads the diff of.
+      - name: Repository size
+        run: python scripts/check_repo_size.py
