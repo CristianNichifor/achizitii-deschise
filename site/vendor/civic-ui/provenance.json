@@ -1,0 +1,15 @@
+{
+  "version": "0.3.0",
+  "source": "https://github.com/CristianNichifor/civic-ui/releases/download/v0.3.0/civic-ui-css-0.3.0.tgz",
+  "sha256": "644b181b1a061516ddfe7cbcbba9d94101e7e0b4f97f4a52c085cccba1f27226",
+  "files": {
+    "LICENSE": "2faf319ed2adedf42bfa9313b73342684540ac219303a197d14377bf79453b8a",
+    "NATIVE.md": "285cac48bc319233ccbfa4d700d83df12d4eeacaba640683ffcb70c8c07c3029",
+    "native.css": "7dfe4e9bb9e3ad3d6bbe66e65b6e35f9a86abc67148647f13b661f81cb83c1a0",
+    "styles.css": "0f1a71a13ddcecf08866ee532b0422f870d9e5b01ab465c475a0099670de537e",
+    "foundations.css": "27e3fb2fbe545e081d58de34f08f8981f07bff3bb7fa0a8e12ac1b8d0a90db53",
+    "controls.css": "c8a144bedafca3a36db66aacdc31dbcf1af0bb12b2995d927a4661b8b64b1eaa",
+    "themes/neutral.css": "11890a0497ef41839cf56f877bcd8c06add9ecf0d8dfcf48b50cbc2ddb2563c9",
+    "themes/usr.css": "d0fbec232d5460a1d207328a3e080866ea224938d5ac38455dc1b3e9f2ab8ff3"
+  }
+}

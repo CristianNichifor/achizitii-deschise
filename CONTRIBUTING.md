@@ -2,6 +2,8 @@
 
 For shared-control work, run the [real-browser adoption baseline](docs/BROWSER_BASELINE.md)
 alongside the Python checks. It does not change the site's static deployment.
+The [native Civic UI contract](docs/CIVIC_UI.md) records the vendored release,
+host theme adapter and intentional migration boundaries.
 
 ## The most useful contribution is not code
 
