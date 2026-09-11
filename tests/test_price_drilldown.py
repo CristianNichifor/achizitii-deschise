@@ -23,6 +23,13 @@ from pathlib import Path
 import pytest
 
 MANIFEST = Path("site/data/manifest.json")
+
+# The ingest workflow runs unit tests before rebuilding the generated Pages bundle. Keep the
+# publication contract tests active when a bundle is present, but do not make a held/offline ingest
+# fail merely because generated site output is intentionally absent from the checkout.
+pytestmark = pytest.mark.skipif(
+    not MANIFEST.is_file(), reason="generated site/data/manifest.json is not present"
+)
 INDEX = Path("site/index.html")
 
 
