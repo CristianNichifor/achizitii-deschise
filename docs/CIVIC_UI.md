@@ -1,6 +1,6 @@
 # Native Civic UI Adoption
 
-The site vendors the public MIT-licensed Civic UI CSS-only **0.3.0** release.
+The site vendors the public MIT-licensed Civic UI CSS-only **0.4.0** release.
 `site/vendor/civic-ui/provenance.json` records its URL, archive SHA-256 and exact
 file hashes. The eight upstream files are unmodified, with license retained.
 The archive's original `NATIVE.md` describes release preparation; the versioned
