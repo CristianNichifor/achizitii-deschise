@@ -204,6 +204,54 @@
     height: 20px;
     animation: civic-spin 1s linear infinite;
   }
+  .civic-filter-toolbar {
+    display: grid;
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid var(--civic-border);
+    background: var(--civic-raised);
+  }
+  .civic-filter-toolbar__fields,
+  .civic-filter-toolbar__meta,
+  .civic-filter-toolbar__actions {
+    display: flex;
+    align-items: end;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .civic-filter-toolbar__meta { justify-content: space-between; align-items: center; }
+  .civic-filter-toolbar__count { color: var(--civic-muted); font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) {
+    .civic-filter-toolbar__fields > *,
+    .civic-filter-toolbar__actions > * { min-width: min(100%, 18rem); }
+    .civic-filter-toolbar__meta { align-items: stretch; }
+  }
+  .civic-operation-status {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    border-left: 3px solid var(--civic-border);
+    background: var(--civic-raised);
+    color: var(--civic-text);
+    overflow-wrap: anywhere;
+  }
+  .civic-operation-status > svg {
+    flex: 0 0 20px;
+    width: 20px;
+    height: 20px;
+  }
+  .civic-operation-status[data-state="success"] { border-color: var(--civic-action); }
+  .civic-operation-status[data-state="warning"],
+  .civic-operation-status[data-state="error"] { border-color: var(--civic-accent); }
+  .civic-operation-status__body {
+    display: grid;
+    gap: 0.35rem;
+    min-width: 0;
+  }
+  .civic-operation-status__detail { color: var(--civic-muted); }
+  .civic-operation-status progress { width: min(100%, 28rem); accent-color: var(--civic-action); }
+  .civic-operation-status__spinner { animation: civic-spin 1s linear infinite; }
   .civic-pagination {
     justify-content: center;
   }
