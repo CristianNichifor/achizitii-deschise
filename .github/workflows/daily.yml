@@ -61,6 +61,20 @@ jobs:
 
       - run: pip install -e ".[dev]"
 
+      # The bundle is a release asset rather than a committed tree, and several tests read it
+      # directly — test_price_drilldown opens site/data/manifest.json unconditionally, which is
+      # the point: it used to carry a skipif that turned into a pass. pages.yml, tests.yml and
+      # browser.yml each fetch it before running; this workflow also runs pytest and did not,
+      # so the first scheduled run after that change failed here, on 2026-09-11.
+      #
+      # It matters more here than the failure suggests. `Test` runs before `Ingest`, so a job
+      # that cannot fetch the bundle never collects — and the manual dispatch this file calls
+      # "one button as the way back" from the hold would have failed before collecting a day.
+      - name: Fetch the bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/fetch_bundle.sh
+
       - name: Test
         run: pytest -q
 
