@@ -30,8 +30,8 @@ FLUXURI = RADACINA / ".github" / "workflows"
 # nothing at all, so every workflow was skipped and the test passed on the broken tree it was
 # written to catch. It is only here because deleting the fetch step and re-running still said
 # "3 passed" — which is the whole argument for checking that a check can fail.
-_PYTEST = re.compile(r"^[^#\n]*\bpytest\b", re.M)
-_FETCH = re.compile(r"^[^#\n]*fetch_bundle\.sh", re.M)
+_PYTEST = re.compile(r"^[^#\n]*\bpytest\b", re.MULTILINE)
+_FETCH = re.compile(r"^[^#\n]*fetch_bundle\.sh", re.MULTILINE)
 
 
 def _fluxuri() -> list[Path]:
