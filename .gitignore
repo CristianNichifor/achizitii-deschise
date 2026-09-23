@@ -12,14 +12,14 @@ venv/
 # Data artefacts — never commit bulk data to git.
 # Raw responses go to object storage; built Parquet is published as a release.
 data/raw/
-data/staging/
-data/core/
-data/marts/
-data/gov_raw/
-data/gov/
-data/findings/
-data/ruti_raw/
-data/ruti/
+data/staging
+data/core
+data/marts
+data/gov_raw
+data/gov
+data/findings
+data/ruti_raw
+data/ruti
 data/firme/
 *.parquet
 *.jsonl
