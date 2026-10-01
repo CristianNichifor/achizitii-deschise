@@ -1,0 +1,31 @@
+name: Scoped contribution
+description: A bounded task with observable acceptance criteria
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and expected behavior
+      description: Include a synthetic example or reproduction where possible.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and constraints
+      description: Affected area, non-goals, compatibility and source requirements.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Observable outcomes that a reviewer can check.
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: Commands, fixtures and evidence needed; no credentials or personal data.
+    validations:
+      required: true

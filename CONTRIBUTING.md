@@ -1,9 +1,62 @@
 # Contributing
 
-For shared-control work, run the [real-browser adoption baseline](docs/BROWSER_BASELINE.md)
-alongside the Python checks. It does not change the site's static deployment.
-The [native Civic UI contract](docs/CIVIC_UI.md) records the vendored release,
-host theme adapter and intentional migration boundaries.
+Use Python 3.11+ (CI uses 3.12). From the repository root:
+
+```sh
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -e '.[dev]'
+.venv/bin/python scripts/check_offline.py
+.venv/bin/ruff check .
+.venv/bin/python scripts/check_repo_size.py
+```
+
+The bounded entrypoint reuses existing inline SEAP detail records, in-memory bulk
+CSV/spreadsheet fixtures, normalization cases, indicator boundary cases and a
+three-row temporary Parquet price archive. It exercises mapping, comparability,
+format detection, thresholds, append-only storage and aggregate rebuilding.
+After dependency installation it needs no network, release bundle, SEAP access,
+credentials or production data. Temporary outputs are created by pytest and do not
+replace `site/data`. Extend these fixtures for bounded changes.
+
+Full existing CI also validates the released aggregate bundle against the committed
+price archive. That is a separate, network-dependent check, not the offline path:
+
+```sh
+./scripts/fetch_bundle.sh
+.venv/bin/python -m pytest -q
+```
+
+The fetch uses the public upstream repository even on forks; no token is required.
+`BUNDLE_REPOSITORY=owner/repo` explicitly selects another release source. It leaves
+an existing local manifest untouched. Do not run a production ingest to satisfy tests.
+Do not substitute a synthetic manifest for released-bundle acceptance assertions.
+
+For UI changes install Node.js/npm, run `npm ci --ignore-scripts`, then
+`npx playwright install --with-deps` and `npm run test:browser` after fetching the
+bundle. See [browser setup](docs/BROWSER_BASELINE.md). CI reuses the existing browser
+job once alongside lint, full pytest and the repository-size check. The aggregate
+`verify` requires both jobs to succeed, including on fork PRs; skipped or cancelled
+jobs fail. The offline subset does not claim released-data or browser coverage.
+
+## Changes and review
+
+Start from current `origin/dev`. Maintainers use `wt new <name> origin/dev` in
+this repo, placing worktrees at `<repo>/.worktrees/<name>`; remove with `wt rm`
+or `wt gc`. Without `wt`, use a separate standard clone and
+`git switch -c <name> origin/dev`. Use `feat/`, `fix/`, `chore/`, `docs/`, `sec/`
+or `adr/` branch prefixes. Never mix changes from another repository.
+
+An issue or PR should state the observable problem, bounded scope, acceptance
+criteria, affected domain invariants, and the commands/results that demonstrate
+success. Add a small regression fixture for changed behavior, including provenance
+for real source excerpts; disclose untested paths and data coverage limits.
+Use Conventional Commits with an imperative lower-case subject, no trailing period,
+and at most 72 characters. Link issues with `Refs: #N` or `Closes: #N` trailers.
+Open PRs against `dev`; agents never merge or deploy. Keep the existing license.
+
+No private handbook, 1Password, production credentials, or production collection is
+needed for contributor verification. Publishing and collection are maintainer tasks,
+not setup steps. Do not run deployment, ingest or release workflows for a code PR.
 
 ## The most useful contribution is not code
 
@@ -12,8 +65,8 @@ problem, and it is mostly a data-curation job that does not require Python.
 
 ### 1. Unit aliases (`data/um_map.yml`)
 
-Every unit the pipeline does not recognise becomes an excluded row. Run an ingest and
-look at what fell out:
+Every unit the pipeline does not recognise becomes an excluded row. Use an existing maintainer-provided sample to
+look at excluded units (do not run an ingest while the SEAP hold is active):
 
 ```sql
 SELECT um_brut, count(*) n
@@ -57,23 +110,10 @@ rejects a parent/child pair outright.
 If a record here misrepresents a real purchase, open an issue with the `ocid` and what is
 wrong. Corrections are fixed **in the pipeline**, so they survive rebuilds.
 
-## Code
-
-```bash
-python -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/pytest -q
-.venv/bin/ruff check .
-```
-
-Smoke test against the live API (be polite — the rate limiter is not optional):
-
-```bash
-.venv/bin/achizitii --start 2026-08-20 --limit 25 --skip-raw
-```
 
 ### Ground rules
 
-1. **Verify against live data; do not assume field semantics.** The project's central
+1. **Verify against recorded source evidence; do not assume field semantics.** The project's central
    fact — that `itemClosingPrice` is a unit price — was established by testing the
    invariant `closingValue == Σ(price × qty)`, not by reading a field name. Most records
    have quantity 1, so wrong assumptions hide easily. Add a test for anything you learn.
@@ -83,3 +123,5 @@ Smoke test against the live API (be polite — the rate limiter is not optional)
    raise `MAX_RPS`, and keep a contactable User-Agent.
 5. **Observation, not accusation.** Language in code, docs and UI describes prices and
    statistical position — never wrongdoing. See `METHODOLOGY.md`.
+
+For shared-control changes, preserve the [native Civic UI contract](docs/CIVIC_UI.md).

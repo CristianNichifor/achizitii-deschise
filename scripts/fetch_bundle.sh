@@ -32,7 +32,8 @@ if [ -f site/data/manifest.json ]; then
   exit 0
 fi
 
-DEPOZIT=${GITHUB_REPOSITORY:-CristianNichifor/achizitii-deschise}
+# Fork PRs use the public upstream dataset; forks need not publish a release.
+DEPOZIT=${BUNDLE_REPOSITORY:-CristianNichifor/achizitii-deschise}
 JETON=${GITHUB_TOKEN:-${GH_TOKEN:-}}
 
 antet=()
