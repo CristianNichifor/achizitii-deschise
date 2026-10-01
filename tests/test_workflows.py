@@ -63,3 +63,41 @@ def test_the_fetch_script_the_workflows_name_exists():
     """The assertion above is satisfied by the string, not by the file. Check the file."""
     script = RADACINA / "scripts" / "fetch_bundle.sh"
     assert script.is_file(), "scripts/fetch_bundle.sh lipsește, dar workflow-urile îl cheamă"
+
+
+def test_fork_bundle_fetch_uses_upstream_unless_explicitly_overridden(tmp_path):
+    """A fork has no bundle releases; GITHUB_REPOSITORY must not select its data."""
+    import os
+    import subprocess
+
+    root = tmp_path / "checkout"
+    (root / "scripts").mkdir(parents=True)
+    script = root / "scripts" / "fetch_bundle.sh"
+    script.write_text((RADACINA / "scripts" / "fetch_bundle.sh").read_text())
+    commands = tmp_path / "bin"
+    commands.mkdir()
+    # Empty release list stops before downloading; record only the requested URL.
+    curl = commands / "curl"
+    curl.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$REQUEST_LOG"\nprintf "[]"\n')
+    curl.chmod(0o755)
+    log = tmp_path / "request"
+    env = {
+        **os.environ,
+        "PATH": f"{commands}:{os.environ['PATH']}",
+        "GITHUB_REPOSITORY": "contributor/fork",
+        "REQUEST_LOG": str(log),
+    }
+    for key in ("GH_TOKEN", "GITHUB_TOKEN", "BUNDLE_REPOSITORY"):
+        env.pop(key, None)
+    for override, expected in (
+        (None, "CristianNichifor/achizitii-deschise"),
+        ("example/datasets", "example/datasets"),
+    ):
+        if override:
+            env["BUNDLE_REPOSITORY"] = override
+        result = subprocess.run(
+            ["bash", str(script)], env=env, capture_output=True, text=True, check=False
+        )
+        assert result.returncode == 1  # No release; do not mistake this for a fetched bundle.
+        assert f"https://api.github.com/repos/{expected}/releases?per_page=30" in log.read_text()
+        assert "contributor/fork" not in log.read_text()
